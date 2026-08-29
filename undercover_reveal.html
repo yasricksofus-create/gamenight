@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dossier confidentiel — Undercover</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Special+Elite&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#12100D;
+  --paper:#F1E6C9;
+  --paper-edge:#E2D3A8;
+  --ink:#241C12;
+  --ink-soft:#5B4E39;
+  --green:#2F5233;
+  --red:#9E2B1E;
+  --gold:#B4872E;
+}
+*{box-sizing:border-box;}
+html,body{margin:0;padding:0;}
+body{
+  background: radial-gradient(circle at 50% 0%, #201A12 0%, var(--bg) 60%);
+  color: var(--paper);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  min-height:100vh;
+  display:flex;
+  justify-content:center;
+  padding: 32px 16px 48px;
+}
+.shell{width:100%;max-width:440px;}
+.eyebrow{
+  font-family:'Special Elite', monospace;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  font-size:12px;
+  color: var(--gold);
+  margin:0 0 6px;
+}
+h1{
+  font-family:'Bebas Neue', sans-serif;
+  font-size:40px;
+  letter-spacing:.03em;
+  margin:0 0 4px;
+  line-height:1;
+}
+.category-banner{
+  display:inline-block;
+  background: var(--paper);
+  color: var(--ink);
+  font-family:'Bebas Neue',sans-serif;
+  font-size:20px;
+  letter-spacing:.03em;
+  padding:6px 14px;
+  border-radius:4px;
+  margin: 10px 0 20px;
+}
+.category-banner .tag{
+  font-family:'Special Elite',monospace;
+  font-size:10px;
+  color: var(--ink-soft);
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  display:block;
+  margin-bottom:2px;
+}
+.lede{color:#C9BFA8;font-size:14px;line-height:1.5;margin:0 0 24px;}
+.tile{
+  width:100%;
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:4px;
+  background: var(--paper);
+  color: var(--ink);
+  border: none;
+  border-left: 6px solid var(--gold);
+  border-radius: 4px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  text-align:left;
+  cursor:pointer;
+  box-shadow: 0 6px 16px rgba(0,0,0,.35);
+  font-family:inherit;
+}
+.tile .num{font-family:'Special Elite',monospace;font-size:11px;letter-spacing:.1em;color:var(--ink-soft);}
+.tile .name{font-family:'Bebas Neue',sans-serif;font-size:26px;letter-spacing:.02em;}
+.tile .hint{font-size:12px;color:var(--ink-soft);}
+.tile.seen{border-left-color:var(--green);}
+.tile:focus-visible{outline:3px solid var(--gold);outline-offset:2px;}
+footer{margin-top:20px;font-size:12px;color:#8B8270;line-height:1.5;}
+.overlay{
+  position:fixed;inset:0;
+  background:rgba(8,6,4,.72);
+  display:flex;align-items:center;justify-content:center;
+  padding:20px;
+  opacity:0;pointer-events:none;
+  transition:opacity .2s ease;
+  z-index:10;
+}
+.overlay.active{opacity:1;pointer-events:auto;}
+.sheet{
+  background:var(--paper);
+  color:var(--ink);
+  border-radius:6px;
+  padding:28px 24px;
+  max-width:360px;
+  width:100%;
+  text-align:center;
+  box-shadow:0 20px 60px rgba(0,0,0,.5);
+  max-height:88vh;
+  overflow-y:auto;
+}
+.sheet h2{font-family:'Bebas Neue',sans-serif;font-size:26px;margin:4px 0 14px;}
+.sheet p{font-size:14px;color:var(--ink-soft);line-height:1.5;margin:0 0 20px;}
+.actions{display:flex;flex-direction:column;gap:10px;}
+.btn{
+  font-family:'Special Elite',monospace;
+  font-size:13px;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  padding:13px 16px;
+  border-radius:4px;
+  border:none;
+  background:var(--ink);
+  color:var(--paper);
+  cursor:pointer;
+}
+.btn.ghost{background:transparent;color:var(--ink-soft);border:1px solid var(--paper-edge);}
+.btn:focus-visible{outline:3px solid var(--gold);outline-offset:2px;}
+.reveal .stamp{
+  display:inline-block;
+  font-family:'Bebas Neue',sans-serif;
+  font-size:15px;
+  letter-spacing:.12em;
+  padding:6px 14px;
+  border:3px solid currentColor;
+  border-radius:4px;
+  transform:rotate(-5deg);
+  margin-bottom:16px;
+}
+.stamp.green{color:var(--green);}
+.stamp.red{color:var(--red);}
+#dossierNum{font-size:11px;}
+#revealCategory{
+  font-family:'Special Elite',monospace;
+  font-size:11px;
+  color:var(--ink-soft);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+  margin:0 0 10px;
+}
+#revealTitle{font-family:'Bebas Neue',sans-serif;font-size:32px;color:var(--ink);margin:0 0 2px;line-height:1.05;}
+#revealAnime{
+  font-family:'Special Elite',monospace;
+  font-size:12px;
+  color:var(--ink-soft);
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  margin:0 0 14px;
+}
+.card-note{
+  background:rgba(36,28,18,.06);
+  border:1px dashed var(--paper-edge);
+  border-radius:4px;
+  padding:10px 12px;
+  font-size:13px;
+  color:var(--ink);
+  text-align:left;
+  margin:0 0 16px;
+  line-height:1.45;
+}
+#revealText{font-size:13.5px;}
+@media (prefers-reduced-motion: reduce){.overlay{transition:none;}}
+</style>
+</head>
+<body>
+<div class="shell">
+  <p class="eyebrow">Dossier confidentiel</p>
+  <h1>UNDERCOVER</h1>
+  <div class="category-banner"><span class="tag" id="catTag"></span><span id="catName"></span></div>
+  <p class="lede">Chaque joueur consulte son dossier seul, puis le referme avant de passer le téléphone au suivant.</p>
+  <main id="grid"></main>
+  <footer>Quand les 3 dossiers ont été consultés, reviens dans le chat pour lancer le premier tour.</footer>
+</div>
+
+<div class="overlay" id="confirmOverlay">
+  <div class="sheet">
+    <p class="eyebrow">Vérification d'identité</p>
+    <h2>Es-tu <span id="confirmName"></span> ?</h2>
+    <p>Assure-toi que personne d'autre ne regarde l'écran avant de continuer.</p>
+    <div class="actions">
+      <button class="btn" id="confirmYes">Ouvrir mon dossier</button>
+      <button class="btn ghost" id="confirmNo">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="revealOverlay">
+  <div class="sheet reveal">
+    <p class="eyebrow" id="dossierNum"></p>
+    <div class="stamp" id="stamp"></div>
+    <h2 id="revealTitle"></h2>
+    <p id="revealAnime"></p>
+    <div class="card-note" id="revealDesc"></div>
+    <p id="revealText"></p>
+    <button class="btn" id="closeReveal">Refermer le dossier</button>
+  </div>
+</div>
+
+<script>
+const DATA = {"players": ["Thorfinn", "Bilal", "Killua"], "undercover": "Killua", "category": "Dragon Ball Z — Arc de Majin Boo", "civil": {"name": "Son Goten", "anime": "Dragon Ball Z", "desc": "Fils cadet de Goku, presque le portrait craché de son père au même âge, apprend la fusion pour affronter Boo."}, "undercover_char": {"name": "Trunks (enfant)", "anime": "Dragon Ball Z", "desc": "Fils de Vegeta et Bulma, aussi fier que son père, se fusionne avec Goten pour former le puissant Gotenks."}};
+const seen = {};
+DATA.players.forEach(p => seen[p] = false);
+let current = null;
+
+document.getElementById('catTag').textContent = 'Catégorie de la manche';
+document.getElementById('catName').textContent = DATA.category;
+
+const grid = document.getElementById('grid');
+const confirmOverlay = document.getElementById('confirmOverlay');
+const revealOverlay = document.getElementById('revealOverlay');
+const confirmName = document.getElementById('confirmName');
+const dossierNum = document.getElementById('dossierNum');
+const stamp = document.getElementById('stamp');
+const revealTitle = document.getElementById('revealTitle');
+const revealAnime = document.getElementById('revealAnime');
+const revealDesc = document.getElementById('revealDesc');
+const revealText = document.getElementById('revealText');
+
+function renderGrid(){
+  grid.innerHTML = '';
+  DATA.players.forEach((name, i) => {
+    const tile = document.createElement('button');
+    tile.className = 'tile' + (seen[name] ? ' seen' : '');
+    const num = '00' + (i + 1);
+    tile.innerHTML = '<span class="num">DOSSIER N&deg; ' + num + '</span>' +
+      '<span class="name">' + name + '</span>' +
+      '<span class="hint">' + (seen[name] ? 'consulte - toucher pour rouvrir' : 'toucher pour consulter') + '</span>';
+    tile.onclick = () => openConfirm(name);
+    grid.appendChild(tile);
+  });
+}
+
+function openConfirm(name){
+  current = name;
+  confirmName.textContent = name;
+  confirmOverlay.classList.add('active');
+}
+
+document.getElementById('confirmNo').onclick = () => confirmOverlay.classList.remove('active');
+document.getElementById('confirmYes').onclick = () => {
+  confirmOverlay.classList.remove('active');
+  showReveal(current);
+};
+
+function showReveal(name){
+  const idx = DATA.players.indexOf(name) + 1;
+  const num = '00' + idx;
+  dossierNum.textContent = 'DOSSIER N° ' + num + ' — ' + name.toUpperCase();
+  if (name === DATA.undercover){
+    const c = DATA.undercover_char;
+    stamp.textContent = 'SOUS COUVERTURE';
+    stamp.className = 'stamp red';
+    revealTitle.textContent = c.name;
+    revealAnime.textContent = c.anime;
+    revealDesc.textContent = c.desc;
+    revealText.textContent = "Tu es l'Undercover. Les autres ont un personnage proche du tien dans le meme univers mais different. Donne des indices sur TON personnage sans le nommer, et essaie de te fondre dans la masse.";
+  } else {
+    const c = DATA.civil;
+    stamp.textContent = 'CIBLE CONNUE';
+    stamp.className = 'stamp green';
+    revealTitle.textContent = c.name;
+    revealAnime.textContent = c.anime;
+    revealDesc.textContent = c.desc;
+    revealText.textContent = "Tu es Innocent. Donne des indices qui evoquent ce personnage, sans jamais dire son nom ni un indice trop evident.";
+  }
+  seen[name] = true;
+  revealOverlay.classList.add('active');
+}
+
+document.getElementById('closeReveal').onclick = () => {
+  revealOverlay.classList.remove('active');
+  renderGrid();
+};
+
+renderGrid();
+</script>
+</body>
+</html>

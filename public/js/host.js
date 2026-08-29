@@ -1,6 +1,7 @@
 // host.js -- Host client: create a room for the chosen game, then show the lobby.
 
 const socket = io(); // open the real-time connection to the server
+window.socket = socket; // expose it so the game-specific script can use it
 
 // Which game did the host pick? It is in the URL, e.g. host.html?game=quiz-party
 const params = new URLSearchParams(window.location.search);
@@ -28,6 +29,27 @@ socket.on("room:created", ({ code, game }) => {
   renderCheatConsole(game); // build the cheat buttons for THIS game
   loadingEl.classList.add("hidden");
   lobbyEl.classList.remove("hidden");
+  // Show the "start game" button now that the room exists.
+  const startBtn = document.getElementById("start-btn");
+  startBtn.classList.remove("hidden");
+  document.getElementById("start-hint").textContent =
+    "Lance quand tous les joueurs ont rejoint.";
+});
+
+// Host clicks "Start": ask the server to begin the game.
+document.getElementById("start-btn").addEventListener("click", () => {
+  socket.emit("host:startGame");
+});
+
+// The game couldn't start (no rules yet, too few players...).
+socket.on("game:error", ({ message }) => {
+  document.getElementById("start-hint").textContent = message;
+});
+
+// The game started: hide the lobby, reveal the game board (drawn by the game's script).
+socket.on("game:started", () => {
+  lobbyEl.classList.add("hidden");
+  document.getElementById("game-root").classList.remove("hidden");
 });
 
 // Build the cheat console from the game's declared cheats. Generic: it shows

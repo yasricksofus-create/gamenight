@@ -1,6 +1,7 @@
 // player.js -- Player client: join a room with a code, then wait in the lobby.
 
 const socket = io();
+window.socket = socket; // expose it so the game-specific script can use it
 
 // The code + name were passed in the URL by the homepage join form.
 const params = new URLSearchParams(window.location.search);
@@ -42,6 +43,12 @@ socket.on("room:playersUpdate", ({ players }) => {
 
 // The host triggered a cheat -> show the shared on-screen effect.
 socket.on("game:cheat", ({ cheat }) => showCheatEffect(cheat));
+
+// The game started: hide the lobby view, reveal the game board (drawn by the game's script).
+socket.on("game:started", () => {
+  connectedEl.classList.add("hidden");
+  document.getElementById("game-root").classList.remove("hidden");
+});
 
 // Could not join (bad code, name taken, missing name...).
 socket.on("join:error", ({ message }) => showError(message));

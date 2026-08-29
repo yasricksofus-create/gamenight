@@ -14,6 +14,7 @@ const http = require("http");
 const { Server } = require("socket.io");
 const path = require("path");
 const { games, getGameById } = require("./games");
+const gameModules = require("./game-modules"); // games that have server-side rules
 
 const app = express();
 const server = http.createServer(app);
@@ -52,6 +53,18 @@ function generateRoomCode() {
     }
   } while (rooms[code]); // guarantees the code is not already used
   return code;
+}
+
+// The "api" is the ONLY way a game module talks to the browsers. It hides
+// Socket.IO from the module, so the module stays pure game logic.
+function makeApi(room) {
+  return {
+    players: () => room.players, // [{id, name}]
+    hostId: room.hostId,
+    toHost: (event, data) => io.to(room.hostId).emit(event, data),
+    toPlayer: (playerId, event, data) => io.to(playerId).emit(event, data),
+    toAll: (event, data) => io.to(room.code).emit(event, data),
+  };
 }
 
 // A "socket" is one connected browser (a host OR a player).
@@ -135,6 +148,41 @@ io.on("connection", (socket) => {
     console.log(`[room ${code}] cheat "${cheatId}" triggered by host`);
   });
 
+  // --- HOST starts the actual game (only if the game has a rules module) ---
+  socket.on("host:startGame", () => {
+    const code = socket.data.roomCode;
+    const room = rooms[code];
+    if (!room || socket.data.role !== "host") return;
+
+    const module = gameModules[room.gameId];
+    if (!module) {
+      socket.emit("game:error", {
+        message: "Ce jeu n'a pas encore de regles (bientot !).",
+      });
+      return;
+    }
+    if (room.players.length < (module.minPlayers || 1)) {
+      socket.emit("game:error", {
+        message: `Il faut au moins ${module.minPlayers} joueurs pour lancer.`,
+      });
+      return;
+    }
+    module.start(makeApi(room), room);
+    io.to(code).emit("game:started", { gameId: room.gameId });
+    console.log(`[room ${code}] game "${room.gameId}" started`);
+  });
+
+  // --- Any in-game action from a player or the host -> routed to the module ---
+  socket.on("game:action", ({ type, payload }) => {
+    const code = socket.data.roomCode;
+    const room = rooms[code];
+    if (!room || !room.gameState) return;
+    const module = gameModules[room.gameId];
+    if (module && module.handle) {
+      module.handle(makeApi(room), socket, room, type, payload);
+    }
+  });
+
   // --- Cleanup when a browser leaves (tab closed, reload, network lost) ---
   socket.on("disconnect", () => {
     const code = socket.data.roomCode;
@@ -149,6 +197,11 @@ io.on("connection", (socket) => {
       delete rooms[code];
       console.log(`[room ${code}] closed (host left)`);
     } else if (socket.data.role === "player") {
+      // If a game is running, let its module react before we drop the player.
+      const module = gameModules[room.gameId];
+      if (room.gameState && module && module.onPlayerLeave) {
+        module.onPlayerLeave(makeApi(room), room, socket.id);
+      }
       // Remove this player and refresh everyone's list.
       room.players = room.players.filter((p) => p.id !== socket.id);
       io.to(code).emit("room:playersUpdate", { players: room.players });

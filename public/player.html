@@ -27,6 +27,9 @@
         </section>
       </div>
 
+      <!-- Where the running game draws itself (filled by the game's script). -->
+      <div id="game-root" class="hidden"></div>
+
       <div id="error" class="hidden error-box">
         <p id="error-text"></p>
         <a href="/" class="back-link">← Retour a l'accueil</a>
@@ -37,5 +40,7 @@
     <script src="/js/theme.js"></script>
     <script src="/js/effects.js"></script>
     <script src="/js/player.js"></script>
+    <!-- Game-specific view (only reacts when an Undercover game is running). -->
+    <script src="/js/games/undercover-player.js"></script>
   </body>
 </html>

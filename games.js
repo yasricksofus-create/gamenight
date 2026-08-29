@@ -86,6 +86,20 @@ const games = [
       { id: "bonus", label: "Lettre bonus", emoji: "🎁" },
     ],
   },
+  {
+    // First game with REAL rules. Its logic lives in game-modules/undercover.js.
+    id: "undercover",
+    name: "Undercover",
+    tagline: "Demasque l'imposteur... ou fais-toi passer pour un civil",
+    emoji: "🕵️", // detective
+    theme: {
+      primary: "#B4872E", // gold, from the "dossier confidentiel" look
+      secondary: "#9E2B1E",
+      background: "#12100D",
+      text: "#F1E6C9",
+    },
+    // No cheats yet -- the Undercover cheats come in a later phase.
+  },
 ];
 
 // Small helper used by the engine and the API to look up one game by its id.

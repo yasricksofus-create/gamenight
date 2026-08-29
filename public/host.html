@@ -39,7 +39,14 @@
           <h2>🎮 Console de l'host <span class="cheat-hint">cheats de ce jeu</span></h2>
           <div id="cheat-buttons" class="cheat-buttons"></div>
         </section>
+
+        <!-- Start the actual game (works for games that have rules). -->
+        <button id="start-btn" class="start-btn hidden">▶ Demarrer la partie</button>
+        <p id="start-hint" class="start-hint"></p>
       </div>
+
+      <!-- Where the running game draws itself (filled by the game's script). -->
+      <div id="game-root" class="hidden"></div>
 
       <div id="error" class="hidden error-box"></div>
     </main>
@@ -49,5 +56,7 @@
     <script src="/js/theme.js"></script>
     <script src="/js/effects.js"></script>
     <script src="/js/host.js"></script>
+    <!-- Game-specific board (only reacts when an Undercover game is running). -->
+    <script src="/js/games/undercover-host.js"></script>
   </body>
 </html>
