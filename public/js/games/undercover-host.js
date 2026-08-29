@@ -10,7 +10,7 @@
     Sound.register("reglages", "/sounds/reglages.mp3");
     Sound.register("distribution", "/sounds/distribution.mp3");
     // Several variants -> played at random so they don't get repetitive.
-    Sound.register("ambiance", ["/sounds/ambiance.mp3", "/sounds/ambiance2.mp3"], { loop: true, volume: 0.35 });
+    Sound.register("ambiance", ["/sounds/ambiance.mp3", "/sounds/ambiance2.mp3"], { loop: true });
     Sound.register("vote", ["/sounds/vote.mp3", "/sounds/vote2.mp3"]);
     // Elimination sound depends on the eliminated player's role.
     Sound.register("elim-civil", "/sounds/elimination-Civil.mp3");
@@ -18,19 +18,22 @@
     Sound.register("mrwhite", "/sounds/mrwhite.mp3");
     Sound.register("victoire", "/sounds/victoire.mp3");
   }
-  // Play the right sound when the game changes phase.
+  // MUSIC (reglages / ambiance / vote / victoire) = one at a time, CROSS-FADED.
+  // SFX (distribution / elimination / mrwhite) = played OVER the music, which
+  // ducks 50% -> 10% (2s down, effect, 2s back up).
   function phaseSound(next, s) {
     if (!window.Sound) return;
-    if (next === "settings") { Sound.fadeOut("ambiance", 500); Sound.play("reglages"); }
-    else if (next === "distribution") { Sound.play("distribution"); Sound.play("ambiance"); }
-    else if (next === "vote") Sound.play("vote");
+    if (next === "settings") Sound.music("reglages");
+    else if (next === "distribution") { Sound.music("ambiance"); Sound.sfx("distribution"); }
+    else if (next === "clues") Sound.music("ambiance"); // back to ambiance between rounds
+    else if (next === "vote") Sound.music("vote");
     else if (next === "reveal") {
       const role = s.lastEliminated && s.lastEliminated.role;
-      if (role === "civil") Sound.play("elim-civil");
-      else if (role === "undercover") Sound.play("elim-undercover");
+      if (role === "civil") Sound.sfx("elim-civil");
+      else if (role === "undercover") Sound.sfx("elim-undercover");
       // Mr. White reveal: his sting already played when he was exposed.
-    } else if (next === "mrwhite") Sound.play("mrwhite");
-    else if (next === "ended") { Sound.fadeOut("ambiance", 700); Sound.play("victoire"); }
+    } else if (next === "mrwhite") Sound.sfx("mrwhite");
+    else if (next === "ended") Sound.music("victoire");
   }
 
   // Load this game's cheats so we can show the host cheat bar during the game.

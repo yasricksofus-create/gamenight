@@ -1,18 +1,46 @@
 // sound.js -- Sound manager (used ONLY by the Undercover game today).
 //
-// Features:
-//  - several VARIANTS per key: play() picks one at random, never the same twice
-//    in a row, so a repeated moment doesn't get boring;
-//  - smooth transitions: looping music fades IN, fades OUT, and automatically
-//    "ducks" (drops in volume) while a short sound effect plays, then recovers;
-//  - browsers block audio until the first interaction, so we unlock on the first
-//    click/touch/key and queue anything asked for before that;
-//  - a missing file just fails silently (no error).
+// Two kinds of sounds:
+//   MUSIC (reglages, ambiance, vote, victoire): only one plays at a time.
+//     Switching does a CROSS-FADE (old fades down while new fades up).
+//   SFX (distribution, elimination-*, mrwhite): plays OVER the music. The music
+//     ducks from its level down to 20% (=10% when master is 50%) over 2s, the
+//     effect plays, then the music climbs back over 2s.
+//
+// A MASTER volume (0..1, default 50%) multiplies every sound and is controlled
+// by the host's volume bar (saved in the browser). Several files can be given
+// for one key: a random variant (never the same twice) is chosen each time.
+// Audio is unlocked on the first user interaction; missing files stay silent.
 window.Sound = (function () {
-  const reg = {}; // key -> { audios:[], loop, volume, lastIdx, current, _restore }
+  const MUSIC_FADE = 1500;   // cross-fade duration (ms)
+  const DUCK_MS = 2000;      // music down / up duration around an effect (ms)
+  const DUCK_RATIO = 0.2;    // music drops to 20% of its level (50% -> 10%)
+
+  const reg = {};            // key -> track record
+  let currentMusic = null;   // key of the music currently playing
   let unlocked = false;
   const pending = [];
 
+  // ----- master volume -----
+  let master = 0.5;
+  try {
+    const v = parseFloat(localStorage.getItem("gn_volume"));
+    if (!isNaN(v)) master = clamp(v);
+  } catch (e) {}
+  function clamp(v) { return Math.max(0, Math.min(1, v)); }
+  function getMaster() { return master; }
+  function setMaster(v) {
+    master = clamp(v);
+    try { localStorage.setItem("gn_volume", String(master)); } catch (e) {}
+    // Update anything currently playing so the change is heard immediately.
+    Object.values(reg).forEach((r) => {
+      const a = r.current;
+      if (a && !a.paused) { clearInterval(a._fade); a.volume = level(r); }
+    });
+  }
+  function level(r) { return r.volume * master; } // effective volume of a track
+
+  // ----- unlock on first interaction -----
   function unlock() {
     if (unlocked) return;
     unlocked = true;
@@ -21,7 +49,7 @@ window.Sound = (function () {
   ["click", "touchstart", "keydown"].forEach((e) =>
     window.addEventListener(e, unlock, { passive: true }));
 
-  // urls can be a single string or an array of variant URLs.
+  // ----- registration -----
   function register(key, urls, opts) {
     opts = opts || {};
     const list = Array.isArray(urls) ? urls : [urls];
@@ -30,7 +58,6 @@ window.Sound = (function () {
       volume: opts.volume != null ? opts.volume : 1,
       lastIdx: -1,
       current: null,
-      _restore: null,
       audios: list.map((u) => {
         const a = new Audio(u);
         a.preload = "auto";
@@ -48,43 +75,65 @@ window.Sound = (function () {
     return i;
   }
 
+  // Ramp an audio element's volume to a target over ms, then run done().
   function fadeTo(a, target, ms, done) {
+    if (!a) { if (done) done(); return; }
+    clearInterval(a._fade);
     const start = a.volume;
     const steps = Math.max(1, Math.round(ms / 40));
     let n = 0;
-    clearInterval(a._fade);
     a._fade = setInterval(() => {
       n++;
-      a.volume = Math.max(0, Math.min(1, start + (target - start) * (n / steps)));
+      a.volume = clamp(start + (target - start) * (n / steps));
       if (n >= steps) { clearInterval(a._fade); if (done) done(); }
     }, 40);
   }
-
-  // Lower the ambience briefly so a sound effect stands out, then bring it back.
-  function duckAmbience() {
-    const amb = reg["ambiance"];
-    if (!amb || !amb.current || amb.current.paused) return;
-    const a = amb.current;
-    fadeTo(a, amb.volume * 0.25, 200);
-    clearTimeout(amb._restore);
-    amb._restore = setTimeout(() => fadeTo(a, amb.volume, 700), 1500);
+  function fadeOutAudio(a, ms) {
+    if (!a) return;
+    fadeTo(a, 0, ms, () => { try { a.pause(); a.currentTime = 0; } catch (e) {} });
   }
 
-  function play(key) {
+  // ----- MUSIC: exclusive, cross-faded -----
+  function music(key) {
     const r = reg[key];
     if (!r) return;
     const run = () => {
-      if (r.loop) {
-        // Never stack two ambience tracks: stop the others first.
-        r.audios.forEach((a) => { try { a.pause(); } catch (e) {} });
-      }
+      if (currentMusic === key && r.current && !r.current.paused) return; // already on
+      if (currentMusic && reg[currentMusic]) fadeOutAudio(reg[currentMusic].current, MUSIC_FADE);
+      currentMusic = key;
+      r.audios.forEach((a) => { try { a.pause(); } catch (e) {} });
       const a = r.audios[pickIndex(r)];
       r.current = a;
       try {
         a.currentTime = 0;
-        if (r.loop) { a.volume = 0; a.play().catch(() => {}); fadeTo(a, r.volume, 900); }
-        else { a.volume = r.volume; a.play().catch(() => {}); duckAmbience(); }
+        a.volume = 0;
+        a.play().catch(() => {});
+        fadeTo(a, level(r), MUSIC_FADE);
       } catch (e) {}
+    };
+    unlocked ? run() : pending.push(run);
+  }
+
+  // ----- SFX: plays over the music, which ducks 2s down / 2s up -----
+  function sfx(key) {
+    const r = reg[key];
+    if (!r) return;
+    const run = () => {
+      const m = currentMusic ? reg[currentMusic] : null;
+      const ma = m && m.current && !m.current.paused ? m.current : null;
+      const a = r.audios[pickIndex(r)];
+      r.current = a;
+
+      const playEffect = () => {
+        try { a.currentTime = 0; a.volume = level(r); a.play().catch(() => {}); } catch (e) {}
+        const bringBack = () => { if (ma && !ma.paused) fadeTo(ma, level(m), DUCK_MS); };
+        a.onended = bringBack;                       // ramp music back up when done
+        clearTimeout(a._upT);
+        a._upT = setTimeout(bringBack, 8000);        // safety net if 'ended' never fires
+      };
+
+      if (ma) fadeTo(ma, level(m) * DUCK_RATIO, DUCK_MS, playEffect); // 2s down, THEN effect
+      else playEffect();
     };
     unlocked ? run() : pending.push(run);
   }
@@ -92,16 +141,9 @@ window.Sound = (function () {
   function stop(key) {
     const r = reg[key];
     if (!r) return;
-    r.audios.forEach((a) => { try { a.pause(); a.currentTime = 0; } catch (e) {} });
+    if (currentMusic === key) currentMusic = null;
+    r.audios.forEach((a) => { try { clearInterval(a._fade); a.pause(); a.currentTime = 0; } catch (e) {} });
   }
 
-  // Smoothly fade a (looping) sound out, then stop it.
-  function fadeOut(key, ms) {
-    const r = reg[key];
-    if (!r || !r.current) return;
-    const a = r.current;
-    fadeTo(a, 0, ms || 600, () => { try { a.pause(); a.currentTime = 0; } catch (e) {} });
-  }
-
-  return { register, play, stop, fadeOut };
+  return { register, music, sfx, stop, setMaster, getMaster };
 })();
