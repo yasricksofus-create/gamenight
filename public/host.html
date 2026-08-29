@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Game Night — Salle du host</title>
+    <link rel="stylesheet" href="/css/base.css" />
+  </head>
+  <body class="room">
+    <main class="room-main">
+      <div id="loading">Creation de la salle…</div>
+
+      <!-- The lobby: shown on the host's shared screen -->
+      <div id="lobby" class="hidden">
+        <header class="room-header">
+          <span id="game-emoji" class="room-emoji"></span>
+          <h1 id="game-name"></h1>
+          <p id="game-tagline" class="subtitle"></p>
+        </header>
+
+        <div class="code-block">
+          <p class="code-label">Code de la salle</p>
+          <p id="room-code" class="room-code">----</p>
+          <p class="code-help">
+            Tes amis vont sur <strong id="site-url"></strong> et entrent ce code.
+          </p>
+        </div>
+
+        <section class="players">
+          <h2>Joueurs connectes (<span id="player-count">0</span>)</h2>
+          <ul id="player-list" class="player-list">
+            <li class="empty">En attente de joueurs…</li>
+          </ul>
+        </section>
+      </div>
+
+      <div id="error" class="hidden error-box"></div>
+    </main>
+
+    <!-- Socket.IO client library, served automatically by the server -->
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/theme.js"></script>
+    <script src="/js/host.js"></script>
+  </body>
+</html>

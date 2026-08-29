@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Game Night — Choisis ton jeu</title>
+    <link rel="stylesheet" href="/css/base.css" />
+  </head>
+  <body class="home">
+    <header class="home-header">
+      <h1>🎉 Game Night</h1>
+      <p class="subtitle">La plateforme de mini-jeux a plusieurs</p>
+    </header>
+
+    <!-- JOIN section: for a player who received a code from the host -->
+    <section class="join-box">
+      <h2>Rejoindre une partie</h2>
+      <form id="join-form">
+        <input id="join-code" type="text" maxlength="4" placeholder="CODE" autocomplete="off" />
+        <input id="join-name" type="text" maxlength="16" placeholder="Ton pseudo" autocomplete="off" />
+        <button type="submit">Rejoindre</button>
+      </form>
+      <p id="join-hint" class="hint"></p>
+    </section>
+
+    <!-- HOST section: the game grid (the "Megapicker") -->
+    <section class="host-box">
+      <h2>Heberger : choisis un jeu</h2>
+      <div id="game-grid" class="game-grid">Chargement des jeux…</div>
+    </section>
+
+    <script src="/js/home.js"></script>
+  </body>
+</html>

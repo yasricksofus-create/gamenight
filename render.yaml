@@ -1,0 +1,10 @@
+# render.yaml -- "Blueprint" for Render.com.
+# Its only job: pre-fill the settings when you create the service, so you don't
+# type them by hand (build/start commands, free plan). Optional but convenient.
+services:
+  - type: web
+    name: gamenight
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start

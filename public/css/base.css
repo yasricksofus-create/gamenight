@@ -1,0 +1,234 @@
+/* base.css -- Base styles for the whole platform (the "engine" look).
+   Colors come from CSS variables that each game overrides with its own DA. */
+
+:root {
+  /* Default (neutral) theme, used on the homepage. */
+  --primary: #6366f1;
+  --secondary: #a855f7;
+  --background: #0f172a;
+  --text: #f1f5f9;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--background);
+  color: var(--text);
+  min-height: 100vh;
+  transition: background 0.4s ease;
+}
+
+.hidden {
+  display: none !important;
+}
+
+/* ---------- Homepage ---------- */
+.home {
+  padding: 2rem 1rem;
+  max-width: 900px;
+  margin: 0 auto;
+}
+.home-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+.home-header h1 {
+  font-size: 2.6rem;
+}
+.subtitle {
+  opacity: 0.8;
+  margin-top: 0.3rem;
+}
+
+.join-box,
+.host-box {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.join-box h2,
+.host-box h2 {
+  margin-bottom: 1rem;
+}
+
+#join-form {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+#join-form input {
+  flex: 1;
+  min-width: 120px;
+  padding: 0.8rem 1rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text);
+}
+#join-code {
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  font-weight: bold;
+  max-width: 130px;
+}
+#join-form button {
+  padding: 0.8rem 1.4rem;
+  font-size: 1rem;
+  font-weight: bold;
+  border: none;
+  border-radius: 10px;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white;
+}
+.hint {
+  margin-top: 0.6rem;
+  color: #fca5a5;
+  min-height: 1.2em;
+}
+
+.game-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+.game-card {
+  border: none;
+  border-radius: 16px;
+  padding: 1.4rem 1rem;
+  cursor: pointer;
+  color: white;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  min-height: 150px;
+  font-family: inherit;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.game-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+}
+.game-emoji {
+  font-size: 2.4rem;
+}
+.game-name {
+  font-size: 1.2rem;
+  font-weight: bold;
+}
+.game-tagline {
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+/* ---------- Room (host + player) ---------- */
+.room-main {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  text-align: center;
+  gap: 1.5rem;
+}
+.room-emoji {
+  font-size: 4rem;
+  display: block;
+}
+.room-header h1 {
+  font-size: 2rem;
+  margin-top: 0.5rem;
+}
+
+.code-block {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  padding: 1.5rem 2.5rem;
+}
+.code-label {
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+.room-code {
+  font-size: 4rem;
+  font-weight: 800;
+  letter-spacing: 0.3em;
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.code-help {
+  opacity: 0.8;
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.players {
+  width: 100%;
+  max-width: 500px;
+}
+.player-list {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  justify-content: center;
+  margin-top: 0.8rem;
+}
+.player-list li {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  padding: 0.5rem 1rem;
+  border-radius: 999px;
+  font-weight: 600;
+}
+.player-list li.empty {
+  background: rgba(255, 255, 255, 0.08);
+  opacity: 0.7;
+  font-weight: normal;
+}
+
+/* ---------- Player-specific ---------- */
+.player-main {
+  max-width: 480px;
+  margin: 0 auto;
+}
+.you-are {
+  opacity: 0.85;
+}
+.waiting-card {
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  padding: 1.5rem;
+  width: 100%;
+}
+.waiting-card p {
+  margin: 0.4rem 0;
+}
+
+/* ---------- Errors ---------- */
+.error-box {
+  background: rgba(220, 38, 38, 0.15);
+  border: 1px solid rgba(220, 38, 38, 0.4);
+  border-radius: 16px;
+  padding: 1.5rem;
+  color: #fecaca;
+  max-width: 400px;
+}
+.back-link {
+  display: inline-block;
+  margin-top: 1rem;
+  color: var(--text);
+}
