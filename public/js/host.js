@@ -25,9 +25,39 @@ socket.on("room:created", ({ code, game }) => {
   document.getElementById("game-tagline").textContent = game.tagline;
   document.getElementById("room-code").textContent = code;
   document.getElementById("site-url").textContent = window.location.host;
+  renderCheatConsole(game); // build the cheat buttons for THIS game
   loadingEl.classList.add("hidden");
   lobbyEl.classList.remove("hidden");
 });
+
+// Build the cheat console from the game's declared cheats. Generic: it shows
+// whatever the game listed, so new games' cheats appear here automatically.
+function renderCheatConsole(game) {
+  const panel = document.getElementById("cheat-console");
+  const buttons = document.getElementById("cheat-buttons");
+  buttons.innerHTML = "";
+
+  if (!game.cheats || game.cheats.length === 0) {
+    panel.classList.add("hidden"); // this game has no cheats -> no console
+    return;
+  }
+
+  game.cheats.forEach((cheat) => {
+    const btn = document.createElement("button");
+    btn.className = "cheat-btn";
+    btn.innerHTML =
+      `<span class="cheat-btn-emoji">${cheat.emoji || "✨"}</span> ${cheat.label}`;
+    // Clicking a cheat asks the server to trigger it (server checks we're host).
+    btn.addEventListener("click", () => {
+      socket.emit("host:cheat", { cheatId: cheat.id });
+    });
+    buttons.appendChild(btn);
+  });
+  panel.classList.remove("hidden");
+}
+
+// A cheat was triggered (by us) -> show the shared on-screen effect.
+socket.on("game:cheat", ({ cheat }) => showCheatEffect(cheat));
 
 // The player list changed (someone joined or left).
 socket.on("room:playersUpdate", ({ players }) => {

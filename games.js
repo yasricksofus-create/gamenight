@@ -3,10 +3,21 @@
 // This is the ONLY file to touch when adding a new game (for now).
 // The engine (server.js) never hard-codes any game: it just reads this list.
 //
-// Each game carries its "DA" (direction artistique) = the visual theme applied
-// to the room: colors, emoji, tagline. There is NO gameplay logic here yet.
-// Later, each game's rules will live in its own separate module, so that adding
-// a game keeps the engine untouched. That is the "generic platform" promise.
+// Each game carries:
+//   - its "DA" (direction artistique) = the visual theme of the room;
+//   - its "cheats" = the actions the host can trigger from the cheat console.
+//
+// IMPORTANT: cheats are declared HERE, per game. The console is generic and
+// simply displays whatever the current game declares -- so adding a game (with
+// its own cheats) makes them appear in the console automatically, WITHOUT
+// touching the engine or the console. That is the "generic platform" promise.
+//
+// A cheat is: { id, label, emoji }.
+//   id    = a short unique key used by the code (no spaces).
+//   label = the text shown on the button.
+//   emoji = a small icon shown on the button and in the on-screen effect.
+// There is still NO gameplay logic: for now a cheat just shows a banner on every
+// screen. Later, each game's rules will react to its cheats for real.
 
 const games = [
   {
@@ -20,6 +31,11 @@ const games = [
       background: "#1e1b4b",
       text: "#f5f3ff",
     },
+    cheats: [
+      { id: "reveal", label: "Reveler la reponse", emoji: "👁️" },
+      { id: "double", label: "Double points", emoji: "✖️" },
+      { id: "trap", label: "Question piege", emoji: "🪤" },
+    ],
   },
   {
     id: "draw-guess",
@@ -32,6 +48,11 @@ const games = [
       background: "#042f2e",
       text: "#ecfeff",
     },
+    cheats: [
+      { id: "hint", label: "Donner un indice", emoji: "💡" },
+      { id: "clear", label: "Effacer le dessin", emoji: "🧽" },
+      { id: "add-time", label: "+30 secondes", emoji: "⏱️" },
+    ],
   },
   {
     id: "bluff-master",
@@ -44,6 +65,10 @@ const games = [
       background: "#450a0a",
       text: "#fff7ed",
     },
+    cheats: [
+      { id: "unmask", label: "Demasquer un menteur", emoji: "🔍" },
+      { id: "swap", label: "Echanger les roles", emoji: "🔄" },
+    ],
   },
   {
     id: "word-storm",
@@ -56,6 +81,10 @@ const games = [
       background: "#0c1a3d",
       text: "#eff6ff",
     },
+    cheats: [
+      { id: "freeze", label: "Geler un joueur", emoji: "❄️" },
+      { id: "bonus", label: "Lettre bonus", emoji: "🎁" },
+    ],
   },
 ];
 

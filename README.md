@@ -11,9 +11,16 @@ rejoignent depuis leur téléphone avec un **code de salle**.
 - Les joueurs rejoignent par ce code depuis leur appareil.
 - Chaque jeu a sa propre **DA** (direction artistique : couleurs, emoji).
 - Liste des joueurs mise à jour en direct (arrivées / départs).
+- **Console de cheat** pour le host : des boutons d'action, construits
+  automatiquement à partir des cheats déclarés par le jeu en cours. Un cheat
+  déclenché s'affiche en direct sur tous les écrans.
+- L'host peut aussi **jouer comme un joueur** : il ouvre l'URL sur son téléphone
+  et rejoint sa propre salle avec le code (aucune manip spéciale).
 
 Il n'y a pas encore de règles de jeu : c'est le **socle** (moteur générique).
-Les jeux eux-mêmes viendront ensuite, sans toucher au moteur.
+Les jeux eux-mêmes viendront ensuite, sans toucher au moteur. Pour l'instant, un
+cheat ne fait qu'afficher une bannière ; quand un jeu aura ses règles, ses cheats
+agiront pour de vrai.
 
 ## Lancer en local (sur ton ordinateur)
 
@@ -50,16 +57,18 @@ public/          → tout ce que voit le navigateur
   player.html    → écran du joueur (téléphone)
   css/base.css   → styles de base
   js/theme.js    → applique la DA du jeu
+  js/effects.js  → affiche la bannière quand un cheat est déclenché
   js/home.js     → logique de l'accueil
-  js/host.js     → logique côté host
+  js/host.js     → logique côté host (dont la console de cheat)
   js/player.js   → logique côté joueur
 ```
 
 ## Ajouter un nouveau jeu (aperçu)
 
 Pour l'instant, il suffit d'ajouter une entrée dans `games.js` (id, nom, emoji,
-tagline, couleurs). Le moteur n'a pas besoin d'être modifié : c'est tout l'intérêt
-d'une plateforme générique.
+tagline, couleurs, et sa liste de `cheats`). Le moteur n'a pas besoin d'être
+modifié, et les cheats du nouveau jeu apparaissent tout seuls dans la console :
+c'est tout l'intérêt d'une plateforme générique.
 
 ## Limite connue (à améliorer plus tard)
 

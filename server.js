@@ -113,6 +113,28 @@ io.on("connection", (socket) => {
     console.log(`[room ${code}] "${name}" joined (${room.players.length} total)`);
   });
 
+  // --- HOST triggers a cheat from the console ---
+  // The engine only RELAYS the cheat; what it means belongs to the game.
+  socket.on("host:cheat", ({ cheatId }) => {
+    const code = socket.data.roomCode;
+    const room = rooms[code];
+    // Security: only the room's own host may trigger cheats. A player (or any
+    // other socket) trying this is ignored.
+    if (!room || socket.data.role !== "host") return;
+
+    // The cheat must be one the current game actually declares (guards against
+    // a forged or outdated cheatId).
+    const game = getGameById(room.gameId);
+    const cheat = game && game.cheats
+      ? game.cheats.find((c) => c.id === cheatId)
+      : null;
+    if (!cheat) return;
+
+    // Broadcast to everyone in the room (host + players).
+    io.to(code).emit("game:cheat", { cheat });
+    console.log(`[room ${code}] cheat "${cheatId}" triggered by host`);
+  });
+
   // --- Cleanup when a browser leaves (tab closed, reload, network lost) ---
   socket.on("disconnect", () => {
     const code = socket.data.roomCode;

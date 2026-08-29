@@ -32,6 +32,13 @@
             <li class="empty">En attente de joueurs…</li>
           </ul>
         </section>
+
+        <!-- The host-only cheat console. Its buttons are built automatically
+             from the current game's declared cheats (see host.js). -->
+        <section id="cheat-console" class="cheat-console hidden">
+          <h2>🎮 Console de l'host <span class="cheat-hint">cheats de ce jeu</span></h2>
+          <div id="cheat-buttons" class="cheat-buttons"></div>
+        </section>
       </div>
 
       <div id="error" class="hidden error-box"></div>
@@ -40,6 +47,7 @@
     <!-- Socket.IO client library, served automatically by the server -->
     <script src="/socket.io/socket.io.js"></script>
     <script src="/js/theme.js"></script>
+    <script src="/js/effects.js"></script>
     <script src="/js/host.js"></script>
   </body>
 </html>

@@ -40,6 +40,9 @@ socket.on("room:playersUpdate", ({ players }) => {
   });
 });
 
+// The host triggered a cheat -> show the shared on-screen effect.
+socket.on("game:cheat", ({ cheat }) => showCheatEffect(cheat));
+
 // Could not join (bad code, name taken, missing name...).
 socket.on("join:error", ({ message }) => showError(message));
 
