@@ -5,12 +5,46 @@
   let state = null;
   let cheats = [];
 
+  // Register the sounds (played on the host screen). Missing files stay silent.
+  if (window.Sound) {
+    Sound.register("reglages", "/sounds/reglages.mp3");
+    Sound.register("distribution", "/sounds/distribution.mp3");
+    // Several variants -> played at random so they don't get repetitive.
+    Sound.register("ambiance", ["/sounds/ambiance.mp3", "/sounds/ambiance2.mp3"], { loop: true, volume: 0.35 });
+    Sound.register("vote", ["/sounds/vote.mp3", "/sounds/vote2.mp3"]);
+    // Elimination sound depends on the eliminated player's role.
+    Sound.register("elim-civil", "/sounds/elimination-Civil.mp3");
+    Sound.register("elim-undercover", "/sounds/elimination-Undercover.mp3");
+    Sound.register("mrwhite", "/sounds/mrwhite.mp3");
+    Sound.register("victoire", "/sounds/victoire.mp3");
+  }
+  // Play the right sound when the game changes phase.
+  function phaseSound(next, s) {
+    if (!window.Sound) return;
+    if (next === "settings") { Sound.fadeOut("ambiance", 500); Sound.play("reglages"); }
+    else if (next === "distribution") { Sound.play("distribution"); Sound.play("ambiance"); }
+    else if (next === "vote") Sound.play("vote");
+    else if (next === "reveal") {
+      const role = s.lastEliminated && s.lastEliminated.role;
+      if (role === "civil") Sound.play("elim-civil");
+      else if (role === "undercover") Sound.play("elim-undercover");
+      // Mr. White reveal: his sting already played when he was exposed.
+    } else if (next === "mrwhite") Sound.play("mrwhite");
+    else if (next === "ended") { Sound.fadeOut("ambiance", 700); Sound.play("victoire"); }
+  }
+
   // Load this game's cheats so we can show the host cheat bar during the game.
   fetch("/api/games/undercover").then((r) => r.json())
     .then((g) => { cheats = g.cheats || []; render(); })
     .catch(() => {});
 
-  socket.on("uc:state", (s) => { state = s; if (s.themeKey) applyUcTheme(s.themeKey); render(); });
+  socket.on("uc:state", (s) => {
+    const prevPhase = state ? state.phase : null;
+    state = s;
+    if (s.themeKey) applyUcTheme(s.themeKey);
+    if (s.phase !== prevPhase) phaseSound(s.phase, s);
+    render();
+  });
   socket.on("uc:cheatReveal", ({ roles }) => showRolesOverlay(roles));
 
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
@@ -102,6 +136,7 @@
     bind("btn-vote", () => send("toVote"));
     bind("btn-resolve", () => send("resolveVote"));
     bind("btn-next", () => send("next"));
+    bind("btn-replay", () => send("replay"));
     root.querySelectorAll(".uc-cheat").forEach((b) => {
       b.onclick = () => socket.emit("host:cheat", { cheatId: b.getAttribute("data-cheat") });
     });
@@ -121,7 +156,8 @@
       `<li class="uc-player">${r.name} — ${ucRoleLabel(r.role)}</li>`).join("");
     return `<p class="uc-eyebrow">Fin de partie</p>
       <h1 class="uc-title">${winTxt}</h1>${secret}
-      <ul class="uc-order">${rolesList}</ul>`;
+      <ul class="uc-order">${rolesList}</ul>
+      <button id="btn-replay" class="uc-btn">Rejouer (nouveau vote de mode)</button>`;
   }
 
   function showRolesOverlay(roles) {

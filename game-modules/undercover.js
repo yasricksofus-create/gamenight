@@ -274,14 +274,7 @@ module.exports = {
 
   // Host started the game -> open the settings vote (Mr. White + mode).
   start(api, room) {
-    const endsAt = Date.now() + SETTINGS_SECONDS * 1000;
-    room.gameState = {
-      phase: "settings",
-      settings: { votes: {}, endsAt, mrWhite: false, mode: "classique", timer: null },
-    };
-    // Auto-finalize when the timer runs out (host can also finalize early).
-    room.gameState.settings.timer = setTimeout(() => finalizeSettings(api, room), SETTINGS_SECONDS * 1000);
-    broadcastState(api, room);
+    openSettings(api, room);
   },
 
   handle(api, socket, room, type, payload) {
@@ -352,6 +345,11 @@ module.exports = {
           broadcastState(api, room);
         }
         break;
+
+      case "replay":
+        // At the end, the host can restart: everyone goes back to the settings vote.
+        if (isHost && state.phase === "ended") openSettings(api, room);
+        break;
     }
   },
 
@@ -397,6 +395,18 @@ module.exports = {
     broadcastState(api, room);
   },
 };
+
+// Open (or re-open, on replay) the 60s settings vote.
+function openSettings(api, room) {
+  const endsAt = Date.now() + SETTINGS_SECONDS * 1000;
+  room.gameState = {
+    phase: "settings",
+    settings: { votes: {}, endsAt, mrWhite: false, mode: "classique", timer: null },
+  };
+  // Auto-finalize when the timer runs out (host can also finalize early).
+  room.gameState.settings.timer = setTimeout(() => finalizeSettings(api, room), SETTINGS_SECONDS * 1000);
+  broadcastState(api, room);
+}
 
 // Decide the settings from the votes, then deal.
 function finalizeSettings(api, room) {
