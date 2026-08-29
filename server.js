@@ -143,8 +143,13 @@ io.on("connection", (socket) => {
       : null;
     if (!cheat) return;
 
-    // Broadcast to everyone in the room (host + players).
+    // Broadcast the little banner to everyone (nice feedback).
     io.to(code).emit("game:cheat", { cheat });
+    // If the running game defines what this cheat DOES, let it act on the state.
+    const module = gameModules[room.gameId];
+    if (room.gameState && module && module.onCheat) {
+      module.onCheat(makeApi(room), room, cheatId);
+    }
     console.log(`[room ${code}] cheat "${cheatId}" triggered by host`);
   });
 

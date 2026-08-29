@@ -98,7 +98,12 @@ const games = [
       background: "#12100D",
       text: "#F1E6C9",
     },
-    // No cheats yet -- the Undercover cheats come in a later phase.
+    cheats: [
+      { id: "reveal-role", label: "Reveler les roles", emoji: "👁️" },
+      { id: "redeal", label: "Relancer la distribution", emoji: "🔄" },
+      { id: "cancel-elim", label: "Annuler l'elimination", emoji: "↩️" },
+      { id: "revote", label: "Relancer le vote", emoji: "🗳️" },
+    ],
   },
 ];
 

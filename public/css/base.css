@@ -462,3 +462,133 @@ body {
   cursor: pointer;
   background: linear-gradient(135deg, var(--primary), var(--secondary));
 }
+
+/* ---------- Undercover phases 2-4 ---------- */
+.uc-title {
+  font-family: "Bebas Neue", var(--fonts, sans-serif);
+  font-size: 2.4rem;
+  letter-spacing: 0.03em;
+  line-height: 1;
+}
+.uc-eyebrow,
+.uc-stamp {
+  font-family: "Special Elite", monospace;
+}
+.uc-expose {
+  color: var(--secondary);
+}
+.uc-count {
+  font-weight: 700;
+  opacity: 0.9;
+}
+.uc-player .uc-count {
+  margin-left: auto;
+}
+
+/* Settings vote buttons (player) */
+.uc-set-btn {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 999px;
+  padding: 0.6rem 1.1rem;
+  font-weight: 700;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.06);
+}
+.uc-set-btn.on {
+  background: linear-gradient(135deg, var(--primary), var(--secondary));
+  color: white;
+  border-color: transparent;
+}
+
+/* Character image on the player card */
+.uc-card-img {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 2px solid rgba(0, 0, 0, 0.15);
+}
+
+/* Mr. White guess input */
+.uc-guess {
+  display: flex;
+  gap: 0.5rem;
+  width: 100%;
+  max-width: 340px;
+}
+.uc-guess input {
+  flex: 1;
+  padding: 0.7rem 0.9rem;
+  border: none;
+  border-radius: 10px;
+  font-size: 1rem;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
+}
+
+/* Host cheat bar (during the game) */
+.uc-cheatbar {
+  margin-top: 1.2rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.15);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: center;
+  align-items: center;
+}
+.uc-cheatbar-title {
+  font-family: "Special Elite", monospace;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  opacity: 0.6;
+  width: 100%;
+}
+.uc-cheat {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.06);
+}
+.uc-cheat:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Host-only roles overlay */
+.uc-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 6, 4, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 20;
+}
+.uc-overlay.show {
+  opacity: 1;
+  pointer-events: auto;
+}
+.uc-sheet {
+  background: #f1e6c9;
+  color: #241c12;
+  border-radius: 12px;
+  padding: 1.6rem;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+}
+.uc-sheet .uc-player {
+  background: rgba(36, 28, 18, 0.08);
+  color: #241c12;
+}
