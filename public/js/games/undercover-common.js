@@ -7,9 +7,26 @@ window.UC_THEMES = {
   gold: { primary: "#B4872E", secondary: "#9E2B1E", background: "#12100D", text: "#F1E6C9" },
   ring: { primary: "#d21f3c", secondary: "#f0a500", background: "#1a0d0d", text: "#fff1e6" },
 };
+// Optional background image per theme. Drop the files in public/themes/ ; if a
+// file is missing, only the dark tint over the base color shows (no broken icon).
+window.UC_BG = {
+  marine: "/themes/marine.jpg",
+  gold: "/themes/gold.jpg",
+  ring: "/themes/ring.jpg",
+};
 window.applyUcTheme = function (key) {
   const palette = window.UC_THEMES[key];
   if (palette && typeof applyTheme === "function") applyTheme(palette);
+  const img = window.UC_BG[key];
+  if (img) {
+    // A dark gradient sits on top of the image so the text stays readable.
+    document.body.style.backgroundImage =
+      'linear-gradient(rgba(0,0,0,0.62), rgba(0,0,0,0.62)), url("' + img + '")';
+    document.body.style.backgroundSize = "cover";
+    document.body.style.backgroundPosition = "center";
+    document.body.style.backgroundAttachment = "fixed";
+    document.body.style.backgroundRepeat = "no-repeat";
+  }
 };
 
 // Fetch a character's image URL from AniList (browser-side; the sandbox can't,

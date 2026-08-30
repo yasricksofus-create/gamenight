@@ -6,6 +6,7 @@
   let state = null;      // shared public state
   let votedRound = -1;   // round I already voted in
   let myVote = { mode: null, mrWhite: null }; // my settings choices (local)
+  const myName = new URLSearchParams(location.search).get("name"); // to read my final role
 
   socket.on("uc:you", (c) => { card = c; render(); });
   socket.on("uc:state", (s) => { state = s; if (s.themeKey) applyUcTheme(s.themeKey); render(); });
@@ -50,8 +51,11 @@
         html += `<p class="uc-wait">${e ? e.name + " est elimine (" + ucRoleLabel(e.role) + ")." : "Personne n'est elimine."}</p>`;
       }
     } else if (s.phase === "ended") {
-      const won = (s.winner === "civils" && card.role === "civil")
-        || (s.winner === "impostors" && (card.role === "undercover" || card.role === "mrwhite"));
+      // Roles are only revealed now (finalRoles). Find mine to know if I won.
+      const mine = (s.finalRoles || []).find((r) => r.name === myName);
+      const myRole = mine ? mine.role : null;
+      const won = (s.winner === "civils" && myRole === "civil")
+        || (s.winner === "impostors" && (myRole === "undercover" || myRole === "mrwhite"));
       html += `<p class="uc-result">${won ? "🎉 Ton camp gagne !" : "😖 Ton camp perd."}</p>`;
     }
 
@@ -85,30 +89,31 @@
     });
   }
 
+  // Mr. White knows he has no word. Civils and the undercover get an IDENTICAL
+  // card (same label, same hint, same style): the undercover must not be able to
+  // tell he is the undercover.
   function cardHtml() {
     if (card.kind === "mrwhite") {
-      return `<div class="uc-card under">
-        <span class="uc-stamp">${card.roleLabel}</span>
+      return `<div class="uc-card">
+        <span class="uc-stamp">Mr. White</span>
         <span class="uc-word">?</span>
         <span class="uc-card-hint">Tu n'as pas de mot. Bluffe : ecoute et fais comme si tu savais.</span>
       </div>`;
     }
     if (card.kind === "character") {
       const c = card.character;
-      return `<div class="uc-card ${card.role === "undercover" ? "under" : "civil"}">
-        <span class="uc-stamp">${card.roleLabel}</span>
+      return `<div class="uc-card">
+        <span class="uc-stamp">Voici ta carte</span>
         <img id="uc-img" class="uc-card-img" alt="" hidden />
         <span class="uc-word">${c.name}</span>
         <span class="uc-card-hint">${c.desc}</span>
       </div>`;
     }
     // word
-    return `<div class="uc-card ${card.role === "undercover" ? "under" : "civil"}">
-      <span class="uc-stamp">${card.roleLabel}</span>
+    return `<div class="uc-card">
+      <span class="uc-stamp">Voici ta carte</span>
       <span class="uc-word">${card.word}</span>
-      <span class="uc-card-hint">${card.role === "undercover"
-        ? "Fonds-toi dans la masse, sans te trahir."
-        : "Donne des indices sur ton mot, sans le dire."}</span>
+      <span class="uc-card-hint">Donne des indices sur ton mot, sans le dire ni etre trop evident.</span>
     </div>`;
   }
 

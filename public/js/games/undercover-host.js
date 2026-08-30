@@ -7,16 +7,17 @@
 
   // Register the sounds (played on the host screen). Missing files stay silent.
   if (window.Sound) {
-    Sound.register("reglages", "/sounds/reglages.mp3");
-    Sound.register("distribution", "/sounds/distribution.mp3");
-    // Several variants -> played at random so they don't get repetitive.
-    Sound.register("ambiance", ["/sounds/ambiance.mp3", "/sounds/ambiance2.mp3"], { loop: true });
-    Sound.register("vote", ["/sounds/vote.mp3", "/sounds/vote2.mp3"]);
+    // registerAuto uses <base>.mp3 and auto-discovers <base>2.mp3 .. <base>8.mp3,
+    // so just dropping new files in public/sounds/ adds variants (no code change).
+    Sound.registerAuto("reglages", "reglages");
+    Sound.registerAuto("distribution", "distribution");
+    Sound.registerAuto("ambiance", "ambiance", { loop: true });
+    Sound.registerAuto("vote", "vote");
     // Elimination sound depends on the eliminated player's role.
-    Sound.register("elim-civil", "/sounds/elimination-Civil.mp3");
-    Sound.register("elim-undercover", "/sounds/elimination-Undercover.mp3");
-    Sound.register("mrwhite", "/sounds/mrwhite.mp3");
-    Sound.register("victoire", "/sounds/victoire.mp3");
+    Sound.registerAuto("elim-civil", "elimination-Civil");
+    Sound.registerAuto("elim-undercover", "elimination-Undercover");
+    Sound.registerAuto("mrwhite", "mrwhite");
+    Sound.registerAuto("victoire", "victoire");
   }
   // MUSIC (reglages / ambiance / vote / victoire) = one at a time, CROSS-FADED.
   // SFX (distribution / elimination / mrwhite) = played OVER the music, which
@@ -32,7 +33,7 @@
       if (role === "civil") Sound.sfx("elim-civil");
       else if (role === "undercover") Sound.sfx("elim-undercover");
       // Mr. White reveal: his sting already played when he was exposed.
-    } else if (next === "mrwhite") Sound.sfx("mrwhite");
+    } else if (next === "mrwhite") Sound.music("mrwhite"); // treated as a music: cuts the rest
     else if (next === "ended") Sound.music("victoire");
   }
 

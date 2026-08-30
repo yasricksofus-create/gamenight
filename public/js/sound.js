@@ -12,12 +12,13 @@
 // for one key: a random variant (never the same twice) is chosen each time.
 // Audio is unlocked on the first user interaction; missing files stay silent.
 window.Sound = (function () {
-  const MUSIC_FADE = 1500;   // cross-fade duration (ms)
+  const MUSIC_FADE = 400;    // cross-fade duration (ms) -- short, minimal overlap
   const DUCK_MS = 2000;      // music down / up duration around an effect (ms)
   const DUCK_RATIO = 0.2;    // music drops to 20% of its level (50% -> 10%)
 
   const reg = {};            // key -> track record
   let currentMusic = null;   // key of the music currently playing
+  const musicKeys = new Set(); // every key ever used as MUSIC (to hand off cleanly)
   let unlocked = false;
   const pending = [];
 
@@ -67,6 +68,24 @@ window.Sound = (function () {
     };
   }
 
+  // Register a key from a base filename AND auto-discover its variants: it uses
+  // /sounds/<base>.mp3 right away, then probes /sounds/<base>2.mp3 .. <base>8.mp3
+  // and adds the ones that exist. So dropping ambiance3.mp3, vote3.mp3, etc. in
+  // the sounds folder is enough -- NO code change needed to add sounds.
+  function registerAuto(key, base, opts) {
+    opts = opts || {};
+    const found = ["/sounds/" + base + ".mp3"];
+    register(key, found, opts); // available immediately with the base file
+    const probes = [];
+    for (let i = 2; i <= 8; i++) probes.push("/sounds/" + base + i + ".mp3");
+    Promise.all(
+      probes.map((u) => fetch(u, { method: "HEAD" }).then((r) => (r.ok ? u : null)).catch(() => null))
+    ).then((results) => {
+      results.forEach((u) => { if (u) found.push(u); });
+      if (found.length > 1) register(key, found, opts); // re-register with variants
+    });
+  }
+
   function pickIndex(r) {
     if (r.audios.length === 1) return 0;
     let i;
@@ -99,7 +118,14 @@ window.Sound = (function () {
     if (!r) return;
     const run = () => {
       if (currentMusic === key && r.current && !r.current.paused) return; // already on
-      if (currentMusic && reg[currentMusic]) fadeOutAudio(reg[currentMusic].current, MUSIC_FADE);
+      musicKeys.add(key);
+      // Fade out EVERY other music track that is still playing -- not just the
+      // "current" one -- so nothing (e.g. reglages) can linger under the game.
+      musicKeys.forEach((mk) => {
+        if (mk === key) return;
+        const o = reg[mk];
+        if (o && o.current) fadeOutAudio(o.current, MUSIC_FADE);
+      });
       currentMusic = key;
       r.audios.forEach((a) => { try { a.pause(); } catch (e) {} });
       const a = r.audios[pickIndex(r)];
@@ -145,5 +171,5 @@ window.Sound = (function () {
     r.audios.forEach((a) => { try { clearInterval(a._fade); a.pause(); a.currentTime = 0; } catch (e) {} });
   }
 
-  return { register, music, sfx, stop, setMaster, getMaster };
+  return { register, registerAuto, music, sfx, stop, setMaster, getMaster };
 })();

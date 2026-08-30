@@ -24,22 +24,37 @@ const MODES = [
   { key: "univers", label: "Univers precis", theme: "ring" },
 ];
 
-const WORD_PAIRS = [
-  { civil: "Cafe", undercover: "The" }, { civil: "Chien", undercover: "Loup" },
-  { civil: "Citron", undercover: "Orange" }, { civil: "Plage", undercover: "Desert" },
-  { civil: "Voiture", undercover: "Moto" }, { civil: "Soleil", undercover: "Lune" },
-  { civil: "Livre", undercover: "Cahier" }, { civil: "Piano", undercover: "Guitare" },
-  { civil: "Neige", undercover: "Pluie" }, { civil: "Montagne", undercover: "Colline" },
-  { civil: "Avion", undercover: "Helicoptere" }, { civil: "Fraise", undercover: "Framboise" },
-  { civil: "Chat", undercover: "Tigre" }, { civil: "Velo", undercover: "Trottinette" },
-  { civil: "Bateau", undercover: "Sous-marin" }, { civil: "Epee", undercover: "Couteau" },
-  { civil: "Chateau", undercover: "Forteresse" }, { civil: "Riviere", undercover: "Lac" },
-  { civil: "Pizza", undercover: "Tarte" }, { civil: "Chocolat", undercover: "Caramel" },
-  { civil: "Trompette", undercover: "Saxophone" }, { civil: "Etoile", undercover: "Planete" },
-  { civil: "Renard", undercover: "Ecureuil" }, { civil: "Train", undercover: "Metro" },
-  { civil: "Miel", undercover: "Confiture" }, { civil: "Requin", undercover: "Dauphin" },
-  { civil: "Nuage", undercover: "Brouillard" }, { civil: "Croissant", undercover: "Baguette" },
-  { civil: "Volcan", undercover: "Geyser" }, { civil: "Roi", undercover: "Reine" },
+// GROUPS of similar French words. The module picks a group then TWO different
+// words in it (one civil, one undercover). Any two of a group can be paired, so
+// the matchups are far more numerous and harder than fixed pairs. Add a word to
+// a group, or a whole group, to grow it.
+const WORD_GROUPS = [
+  ["Chat", "Tigre", "Lion", "Panthere", "Guepard", "Leopard"],
+  ["Chien", "Loup", "Renard", "Chacal", "Hyene"],
+  ["Cafe", "The", "Chocolat chaud", "Cappuccino", "Tisane"],
+  ["Citron", "Orange", "Mandarine", "Pamplemousse", "Clementine"],
+  ["Fraise", "Framboise", "Cerise", "Mure", "Groseille", "Myrtille"],
+  ["Velo", "Moto", "Trottinette", "Scooter", "Monocycle"],
+  ["Soleil", "Lune", "Etoile", "Planete", "Comete"],
+  ["Trompette", "Saxophone", "Clarinette", "Flute", "Trombone"],
+  ["Piano", "Guitare", "Violon", "Harpe", "Violoncelle"],
+  ["Montagne", "Colline", "Falaise", "Volcan", "Plateau", "Dune"],
+  ["Riviere", "Lac", "Fleuve", "Etang", "Mare", "Ocean"],
+  ["Avion", "Helicoptere", "Montgolfiere", "Planeur", "Fusee"],
+  ["Bateau", "Sous-marin", "Voilier", "Kayak", "Paquebot", "Radeau"],
+  ["Gateau", "Tarte", "Crepe", "Gaufre", "Beignet", "Pancake"],
+  ["Chocolat", "Caramel", "Bonbon", "Nougat", "Miel", "Confiture"],
+  ["Ecureuil", "Hamster", "Souris", "Castor", "Marmotte", "Lapin"],
+  ["Train", "Metro", "Tramway", "Tgv", "Funiculaire"],
+  ["Epee", "Couteau", "Poignard", "Sabre", "Hache", "Lance"],
+  ["Chateau", "Forteresse", "Citadelle", "Donjon", "Tour", "Palais"],
+  ["Requin", "Dauphin", "Baleine", "Orque", "Phoque", "Otarie"],
+  ["Neige", "Pluie", "Grele", "Brouillard", "Verglas", "Rosee"],
+  ["Croissant", "Baguette", "Brioche", "Pain au chocolat", "Chausson"],
+  ["Fourchette", "Cuillere", "Couteau", "Louche", "Spatule"],
+  ["Roi", "Reine", "Prince", "Empereur", "Duc", "Chevalier"],
+  ["Rose", "Tulipe", "Marguerite", "Pivoine", "Orchidee", "Jonquille"],
+  ["Pizza", "Burger", "Tacos", "Kebab", "Panini", "Hot-dog"],
 ];
 
 // ---------- small helpers ----------
@@ -52,6 +67,13 @@ function shuffle(arr) {
   return a;
 }
 function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
+// Pick two DIFFERENT members of a list, at random (needs length >= 2).
+function pickTwo(list) {
+  const i = Math.floor(Math.random() * list.length);
+  let j;
+  do { j = Math.floor(Math.random() * list.length); } while (j === i);
+  return [list[i], list[j]];
+}
 function roleLabel(role) {
   if (role === "undercover") return "Undercover";
   if (role === "mrwhite") return "Mr. White";
@@ -67,12 +89,23 @@ function aliveIds(state) {
 }
 function isImpostor(role) { return role === "undercover" || role === "mrwhite"; }
 
-// Spicy undercover count, then balanced so civils always outnumber impostors.
+// Rotate an array by k positions (used to change the turn order each round).
+function rotate(arr, k) {
+  const n = arr.length;
+  if (n === 0) return arr.slice();
+  k = ((k % n) + n) % n;
+  return arr.slice(k).concat(arr.slice(0, k));
+}
+
+// Total impostor count ("sale" scaling). Mr. White does NOT add one: when he is
+// present he TAKES the place of one undercover, so the total stays the same.
 function composition(n, wantMrWhite) {
-  let nbUnder = n >= 8 ? 3 : n >= 5 ? 2 : 1;
+  const impostors = n >= 8 ? 3 : n >= 5 ? 2 : 1;
   const mrw = wantMrWhite && n >= 4;
-  const maxImpostors = Math.floor((n - 1) / 2);
-  while (nbUnder + (mrw ? 1 : 0) > maxImpostors && nbUnder > 0) nbUnder--;
+  let nbUnder = mrw ? impostors - 1 : impostors;
+  // Safety: keep the civils a strict majority.
+  const maxImp = Math.floor((n - 1) / 2);
+  while (nbUnder + (mrw ? 1 : 0) > maxImp && nbUnder > 0) nbUnder--;
   return { nbUnder, mrw };
 }
 
@@ -148,13 +181,14 @@ function deal(api, room) {
     cards[p.id] = cardFor(role, pair);
   });
 
-  // Turn order: Mr. White is never 1st or 2nd on round 1.
-  let order = shuffle(ids);
+  // Base turn order (round 1): Mr. White is never 1st or 2nd. Later rounds
+  // rotate this base order so a different player leads each round.
+  let baseOrder = shuffle(ids);
   if (mrwhiteId) {
-    const idx = order.indexOf(mrwhiteId);
-    if (idx < 2 && order.length > 2) {
-      const swapWith = 2 + Math.floor(Math.random() * (order.length - 2));
-      [order[idx], order[swapWith]] = [order[swapWith], order[idx]];
+    const idx = baseOrder.indexOf(mrwhiteId);
+    if (idx < 2 && baseOrder.length > 2) {
+      const swapWith = 2 + Math.floor(Math.random() * (baseOrder.length - 2));
+      [baseOrder[idx], baseOrder[swapWith]] = [baseOrder[swapWith], baseOrder[idx]];
     }
   }
 
@@ -162,7 +196,8 @@ function deal(api, room) {
   state.alive = alive;
   state.names = names;
   state.cards = cards;
-  state.order = order;
+  state.baseOrder = baseOrder;
+  state.order = baseOrder.slice();
   state.votes = {};
   state.round = 1;
   state.lastEliminated = null;
@@ -177,21 +212,19 @@ function deal(api, room) {
 
 function buildPair(mode) {
   if (mode === "classique") {
-    const w = pick(WORD_PAIRS);
-    return { kind: "word", civil: w.civil, undercover: w.undercover };
+    const group = pick(WORD_GROUPS);
+    const [c, u] = pickTwo(group);
+    return { kind: "word", civil: c, undercover: u };
   }
-  let list, universe = null;
-  if (mode === "anime_saison") list = anime.SAISON;
+  // Pick a GROUP (cluster) of similar characters, then two different members.
+  let group, universe = null;
+  if (mode === "anime_saison") group = pick(anime.SAISON);
   else if (mode === "univers") {
     universe = pick(Object.keys(anime.UNIVERS));
-    list = anime.UNIVERS[universe];
-  } else list = anime.CONFONDU; // anime_confondu (default)
+    group = anime.UNIVERS[universe];
+  } else group = pick(anime.CONFONDU); // anime_confondu (default)
 
-  const p = pick(list);
-  // Randomize which character is the civils' one.
-  const flip = Math.random() < 0.5;
-  const civ = flip ? p.a : p.b;
-  const und = flip ? p.b : p.a;
+  const [civ, und] = pickTwo(group);
   return {
     kind: "character",
     universe,
@@ -202,13 +235,13 @@ function buildPair(mode) {
 
 function cardFor(role, pair) {
   if (role === "mrwhite") {
-    return { kind: "mrwhite", role, roleLabel: roleLabel(role) };
+    return { kind: "mrwhite" }; // Mr. White knows he has no word
   }
+  // Civils AND the undercover get an IDENTICAL-LOOKING card: no role is sent, so
+  // the undercover cannot know he is the undercover (he just has a word).
   const which = role === "undercover" ? pair.undercover : pair.civil;
-  if (pair.kind === "word") {
-    return { kind: "word", role, roleLabel: roleLabel(role), word: which };
-  }
-  return { kind: "character", role, roleLabel: roleLabel(role), character: which };
+  if (pair.kind === "word") return { kind: "word", word: which };
+  return { kind: "character", character: which };
 }
 
 // Build the PUBLIC state (no secret words) and send it to everyone.
@@ -341,7 +374,14 @@ module.exports = {
       case "next":
         if (isHost && state.phase === "reveal") {
           if (state.winner) state.phase = "ended";
-          else { state.phase = "clues"; state.round += 1; state.votes = {}; state.mrwhiteGuessResult = null; }
+          else {
+            state.phase = "clues";
+            state.round += 1;
+            state.votes = {};
+            state.mrwhiteGuessResult = null;
+            // New round -> a brand new random turn order.
+            state.order = shuffle(state.order);
+          }
           broadcastState(api, room);
         }
         break;

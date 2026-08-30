@@ -1,28 +1,28 @@
 DOSSIER DES SONS — Game Night (jeu Undercover uniquement)
 =========================================================
 
-Les sons sont joues sur l'ECRAN DU HOST (celui qui a le son partage), et
-servent UNIQUEMENT au jeu Undercover.
+Les sons sont joues sur l'ECRAN DU HOST. AJOUTER DES SONS NE DEMANDE AUCUNE
+MODIFICATION DE CODE : depose simplement les fichiers ici avec le bon nom.
 
-Fichiers utilises actuellement :
+Fichiers de base :
+  reglages.mp3                -> pendant le vote des reglages (MUSIQUE)
+  ambiance.mp3                -> ambiance en boucle pendant la partie (MUSIQUE)
+  vote.mp3                    -> pendant le vote (MUSIQUE)
+  mrwhite.mp3                 -> quand Mr. White est demasque (MUSIQUE : coupe le reste)
+  victoire.mp3                -> fin de partie (MUSIQUE)
+  distribution.mp3            -> distribution des cartes (BRUITAGE)
+  elimination-Civil.mp3       -> un CIVIL est elimine (BRUITAGE)
+  elimination-Undercover.mp3  -> un UNDERCOVER est elimine (BRUITAGE)
 
-  reglages.mp3                -> ouverture du vote des reglages
-  distribution.mp3            -> distribution des roles/cartes
-  ambiance.mp3 / ambiance2.mp3-> musique d'ambiance EN BOUCLE (variantes tirees
-                                 au hasard, sans repeter la meme deux fois)
-  vote.mp3 / vote2.mp3        -> debut du vote (variantes au hasard)
-  elimination-Civil.mp3       -> quand un CIVIL est elimine
-  elimination-Undercover.mp3  -> quand un UNDERCOVER est elimine
-  mrwhite.mp3                 -> quand Mr. White est demasque
-  victoire.mp3                -> fin de partie
+AJOUTER DES VARIANTES (jouees au hasard, sans repeter la meme deux fois) :
+  Ajoute simplement un chiffre a la fin : ambiance2.mp3, ambiance3.mp3,
+  vote2.mp3, vote3.mp3, distribution2.mp3, mrwhite2.mp3, etc. (jusqu'a 8).
+  Le jeu les detecte tout seul au chargement de la page host. AUCUN CODE A TOUCHER.
 
-Ajouter des VARIANTES pour diversifier :
-  - Ambiance : ajoute ambiance3.mp3, ambiance4.mp3... puis dis-le moi (je les
-    ajoute a la liste jouee au hasard). Pareil pour vote3.mp3, etc.
-  - Un fichier ajoute mais pas encore declare dans le code ne sera pas joue :
-    envoie-moi juste le nom et je le branche.
+MUSIQUES vs BRUITAGES :
+  - Les MUSIQUES sont exclusives : demarrer l'une coupe les autres (fondu court).
+  - Les BRUITAGES se jouent PAR-DESSUS la musique, qui baisse (50% -> 10%) 2s,
+    puis remonte 2s.
 
-Transitions : l'ambiance fait un fondu d'entree, baisse automatiquement pendant
-un bruitage (ducking) puis remonte, et fait un fondu de sortie a la fin.
-
-Formats acceptes : .mp3 (conseille), .ogg, .wav.
+Volume : barre en bas a droite de l'ecran host (avec bouton muet), a 50% par defaut.
+Formats acceptes : .mp3 (utilise par la detection auto).
