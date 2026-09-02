@@ -16,8 +16,8 @@ const http = require("http");
 const crypto = require("crypto");
 const { Server } = require("socket.io");
 const path = require("path");
-const { games, getGameById } = require("./games");
-const gameModules = require("./game-modules");
+// The engine loads every game from its own folder under /games (see the loader).
+const { games, getGameById, gameModules } = require("./engine/games-loader");
 
 const app = express();
 const server = http.createServer(app);
@@ -28,6 +28,9 @@ const PORT = process.env.PORT || 3000;
 const GRACE_MS = Number(process.env.GRACE_MS) || 90000;
 
 app.use(express.static(path.join(__dirname, "public")));
+// Each game's browser code lives in its own folder (games/<id>/client/*.js) and
+// is loaded on demand by the active game only (see public/js/game-loader.js).
+app.use("/games", express.static(path.join(__dirname, "games")));
 
 app.get("/api/games", (req, res) => res.json(games));
 app.get("/api/games/:id", (req, res) => {
@@ -231,6 +234,19 @@ io.on("connection", (socket) => {
     if (!module || !module.handle) return;
     const actor = { isHost: socket.data.role === "host", seatId: socket.data.seatId || null };
     module.handle(makeApi(room), actor, room, type, payload);
+  });
+
+  // ---------- Client bundle loaded -> push it the current state ----------
+  // A game's browser code is now loaded ON DEMAND, so its socket listeners attach
+  // AFTER the room may already have broadcast. When the bundle is ready it asks
+  // for a resync, and we replay the current state to it (same path as reconnect).
+  socket.on("game:sync", () => {
+    const room = rooms[socket.data.code];
+    if (!room || !room.gameState) return;
+    const module = gameModules[room.gameId];
+    if (!module || !module.onReconnect) return;
+    const who = socket.data.role === "host" ? { isHost: true } : { seatId: socket.data.seatId };
+    module.onReconnect(makeApi(room), room, who);
   });
 
   // ---------- Disconnect: start a grace timer, don't drop immediately ----------

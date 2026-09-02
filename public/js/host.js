@@ -33,6 +33,8 @@ if (socket.connected) identify();
 // Fill the lobby scaffolding (code, game info, cheat console, start button).
 function setupLobby(code, game) {
   applyTheme(game.theme);
+  // Pull in THIS game's board code (games/<id>/client/host.js) if not already.
+  if (window.GameClient) GameClient.load(game.id, "host");
   document.getElementById("game-emoji").textContent = game.emoji;
   document.getElementById("game-name").textContent = game.name;
   document.getElementById("game-tagline").textContent = game.tagline;

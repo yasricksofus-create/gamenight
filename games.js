@@ -105,6 +105,24 @@ const games = [
       { id: "revote", label: "Relancer le vote", emoji: "🗳️" },
     ],
   },
+  {
+    // "Cascade" -- original shedding card game (Uno-like). Logic in game-modules/uno.js.
+    id: "uno",
+    name: "Cascade",
+    tagline: "Vide ta main avant les autres !",
+    emoji: "🎴",
+    theme: {
+      primary: "#4C46F0",
+      secondary: "#F04646",
+      background: "#0b132b",
+      text: "#eaf0ff",
+    },
+    cheats: [
+      { id: "reveal-hands", label: "Voir les mains", emoji: "👁️" },
+      { id: "skip-turn", label: "Sauter le tour actuel", emoji: "⏭️" },
+      { id: "redeal", label: "Redistribuer", emoji: "🔄" },
+    ],
+  },
 ];
 
 // Small helper used by the engine and the API to look up one game by its id.

@@ -44,9 +44,8 @@
     <script src="/socket.io/socket.io.js"></script>
     <script src="/js/theme.js"></script>
     <script src="/js/effects.js"></script>
+    <!-- Loads ONLY the active game's view (games/<id>/client/player.js) on demand. -->
+    <script src="/js/game-loader.js"></script>
     <script src="/js/player.js"></script>
-    <!-- Game-specific view (only reacts when an Undercover game is running). -->
-    <script src="/js/games/undercover-common.js"></script>
-    <script src="/js/games/undercover-player.js"></script>
   </body>
 </html>

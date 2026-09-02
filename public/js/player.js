@@ -37,6 +37,8 @@ function remember(seatId) {
 }
 function setup(game, youName) {
   applyTheme(game.theme);
+  // Pull in THIS game's view code (games/<id>/client/player.js) if not already.
+  if (window.GameClient) GameClient.load(game.id, "player");
   document.getElementById("game-emoji").textContent = game.emoji;
   document.getElementById("game-name").textContent = game.name;
   document.getElementById("you-name").textContent = youName;

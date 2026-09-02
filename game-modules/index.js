@@ -7,4 +7,5 @@
 
 module.exports = {
   undercover: require("./undercover"),
+  uno: require("./uno"),
 };
