@@ -310,23 +310,25 @@ module.exports = {
     openSettings(api, room);
   },
 
-  handle(api, socket, room, type, payload) {
+  // actor = { isHost, seatId } -- a STABLE identity (survives reconnections).
+  handle(api, actor, room, type, payload) {
     const state = room.gameState;
     if (!state) return;
-    const isHost = socket.id === room.hostId;
+    const isHost = actor.isHost;
+    const me = actor.seatId;
 
     switch (type) {
       case "voteSetting": {
         if (state.phase !== "settings") break;
-        if (socket.id === room.hostId) break; // host doesn't vote settings
-        const v = state.settings.votes[socket.id] || {};
+        if (isHost) break; // host doesn't vote settings
+        const v = state.settings.votes[me] || {};
         if (payload && payload.key === "mrWhite" && api.players().length >= 4) {
           v.mrWhite = !!payload.value;
         }
         if (payload && payload.key === "mode" && MODES.some((m) => m.key === payload.value)) {
           v.mode = payload.value;
         }
-        state.settings.votes[socket.id] = v;
+        state.settings.votes[me] = v;
         broadcastState(api, room);
         break;
       }
@@ -342,7 +344,7 @@ module.exports = {
         break;
       case "vote": {
         if (state.phase !== "vote") break;
-        const voter = socket.id, target = payload && payload.targetId;
+        const voter = me, target = payload && payload.targetId;
         if (!state.alive[voter] || !state.alive[target] || target === voter) break;
         state.votes[voter] = target;
         api.toPlayer(voter, "uc:voted", { targetId: target });
@@ -354,7 +356,7 @@ module.exports = {
         if (isHost && state.phase === "vote") resolveVote(api, room);
         break;
       case "mrwhiteGuess": {
-        if (state.phase !== "mrwhite" || socket.id !== state.mrwhiteGuessing) break;
+        if (state.phase !== "mrwhite" || me !== state.mrwhiteGuessing) break;
         const guess = payload && payload.word;
         const correct = norm(guess) && norm(guess) === norm(civilWord(state));
         state.mrwhiteGuessResult = { guess: String(guess || ""), correct };
@@ -421,6 +423,16 @@ module.exports = {
         broadcastState(api, room);
         break;
     }
+  },
+
+  // Someone came back (a player to their seat, or the host). Resend their state.
+  onReconnect(api, room, who) {
+    const state = room.gameState;
+    if (!state) return;
+    if (who && who.seatId && state.cards && state.cards[who.seatId]) {
+      api.toPlayer(who.seatId, "uc:you", state.cards[who.seatId]);
+    }
+    broadcastState(api, room); // resends the public board to everyone (incl. the returner)
   },
 
   onPlayerLeave(api, room, playerId) {

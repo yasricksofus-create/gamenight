@@ -13,7 +13,7 @@
   socket.on("uc:voted", () => { votedRound = state ? state.round : votedRound; render(); });
 
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
-  function myEntry() { return state ? state.order.find((p) => p.id === socket.id) : null; }
+  function myEntry() { return state ? state.order.find((p) => p.id === window.mySeatId) : null; }
 
   function render() {
     if (!state) return;
@@ -36,7 +36,7 @@
       else if (votedRound === s.round) html += `<p class="uc-wait">Vote enregistre. En attente…</p>`;
       else html += voteButtons(s);
     } else if (s.phase === "mrwhite") {
-      if (s.mrwhite && s.mrwhite.id === socket.id) {
+      if (s.mrwhite && s.mrwhite.id === window.mySeatId) {
         html += `<p class="uc-wait">Tu es demasque ! Devine le mot des civils :</p>
           <div class="uc-guess"><input id="uc-guess-input" placeholder="ton mot…" autocomplete="off" />
           <button id="uc-guess-btn" class="uc-btn">Proposer</button></div>`;
@@ -118,7 +118,7 @@
   }
 
   function voteButtons(s) {
-    const btns = s.order.filter((p) => p.alive && p.id !== socket.id)
+    const btns = s.order.filter((p) => p.alive && p.id !== window.mySeatId)
       .map((p) => `<button id="vote-${p.id}" class="uc-vote-btn">${p.name}</button>`).join("");
     return `<p class="uc-wait">Qui est l'imposteur ? Vote :</p><div class="uc-vote-list">${btns}</div>`;
   }
@@ -135,7 +135,7 @@
     }
     // Wire vote buttons
     if (s.phase === "vote" && alive && votedRound !== s.round) {
-      s.order.filter((p) => p.alive && p.id !== socket.id).forEach((p) => {
+      s.order.filter((p) => p.alive && p.id !== window.mySeatId).forEach((p) => {
         const b = document.getElementById("vote-" + p.id);
         if (b) b.onclick = () => send("vote", { targetId: p.id });
       });

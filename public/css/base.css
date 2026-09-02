@@ -621,3 +621,23 @@ body {
   accent-color: var(--primary);
   cursor: pointer;
 }
+
+/* ---------- Leave-room button (host + player, top-left) ---------- */
+.leave-btn {
+  position: fixed;
+  left: 14px;
+  top: 14px;
+  z-index: 1200;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.45);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+.leave-btn:hover {
+  background: rgba(0, 0, 0, 0.68);
+}
