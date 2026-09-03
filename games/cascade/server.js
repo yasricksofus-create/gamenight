@@ -135,7 +135,10 @@ function broadcast(api, room) {
     lastAction: s.lastAction || null,
   };
   api.toAll("cascade:state", pub);
-  // Private per-player info: their hand + any pending prompt aimed at them.
+  // Re-send every player their hand on EVERY update, so a played/drawn card is
+  // reflected immediately on the phone (the hand changes on almost every action).
+  sendHands(api, s);
+  // Private per-player info: whose turn + any pending prompt aimed at them.
   s.players.forEach((id) => {
     const mine = { yourTurn: s.players[s.turn] === id, awaiting: null };
     if (s.awaiting && s.awaiting.seatId === id) mine.awaiting = s.awaiting;
@@ -179,7 +182,7 @@ function deal(api, room) {
 // ---------- applying a played card's effect ----------
 // Returns true if the turn was already advanced by the effect handler.
 function applyEffect(api, room, s, seatId, c) {
-  s.lastAction = { name: s.names[seatId], kind: c.kind, color: c.color };
+  s.lastAction = { name: s.names[seatId], kind: c.kind, color: c.color, value: c.value };
 
   switch (c.kind) {
     case "skip":

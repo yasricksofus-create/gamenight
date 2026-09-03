@@ -33,6 +33,20 @@
     return t && c.kind === t.kind && c.color === t.color && c.value === t.value;
   }
 
+  // Skip rebuilding the DOM when nothing visible changed (kills the flicker: the
+  // three events state/hand/you each used to trigger a full re-render).
+  let lastSig = null;
+  function playerSig() {
+    if (!state) return "";
+    const s = state;
+    if (s.phase === "settings") return "set|" + JSON.stringify(myVote) + "|" + JSON.stringify(s.counts || {});
+    if (s.phase === "ended") return "end|" + (s.winner === me());
+    return ["play", s.top && s.top.id, s.activeColor, s.pendingDraw, s.turn,
+      you.yourTurn, JSON.stringify(you.awaiting), s.rules && s.rules.jumpin ? 1 : 0,
+      s.players.map((p) => p.id + ":" + p.count + ":" + (p.said ? 1 : 0)).join(","),
+      hand.map((c) => c.id).join(","), "fs:" + flushSel.join(",")].join("|");
+  }
+
   const RULES = [
     { key: "cumul", name: "Cumul des pioches", desc: "Empiler +2 sur +2 (ou +4 sur +4)." },
     { key: "jumpin", name: "Jump-in", desc: "Jouer hors tour une carte identique au dessus." },
@@ -42,6 +56,9 @@
 
   function render() {
     if (!state) return;
+    const sg = playerSig();
+    if (sg === lastSig) return; // nothing changed -> keep the DOM as-is
+    lastSig = sg;
     const s = state;
     if (s.phase === "settings") return renderSettings(s);
     if (s.phase === "ended") return renderEnded(s);

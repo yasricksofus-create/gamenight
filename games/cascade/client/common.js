@@ -57,13 +57,16 @@ window.unoCardHtml = function (c, opts) {
 
   let inner;
   if (c.kind === "number") {
+    // Clean, untilted oval + big digit (crisp: no rotation, no heavy shadow).
     inner = `<span class="uno-corner tl">${c.value}</span>
-      <span class="uno-oval"><span class="uno-big">${c.value}</span></span>
+      <span class="uno-face-num"><span class="uno-big">${c.value}</span></span>
       <span class="uno-corner br">${c.value}</span>`;
   } else {
+    // Special / custom cards: one BIG centered symbol (the user's Canva PNG),
+    // with a text fallback behind it if the image is missing.
     const src = UNO_SYMS[c.kind];
     const fb = UNO_FALLBACK[c.kind] || "?";
-    inner = `<span class="uno-oval">
+    inner = `<span class="uno-symwrap">
         <span class="uno-fallback">${fb}</span>
         <img class="uno-sym" src="${src}" alt="${fb}" onerror="this.style.display='none'" />
       </span>`;
@@ -97,29 +100,33 @@ window.unoInjectStyles = function () {
   .uno-title{font-family:"Bebas Neue",sans-serif;font-size:2.4rem;letter-spacing:.03em;margin:.1em 0 .3em;}
   .uno-sub{opacity:.82;margin:.2em 0;}
   /* --- a card --- */
-  .uno-card{position:relative;width:88px;height:126px;border-radius:12px;background:var(--c);
-    box-shadow:0 4px 10px rgba(0,0,0,.35);border:3px solid rgba(255,255,255,.92);
+  .uno-card{position:relative;width:94px;height:134px;border-radius:12px;background:var(--c);
+    box-shadow:0 4px 10px rgba(0,0,0,.35);border:3px solid #fff;-webkit-font-smoothing:antialiased;
     display:flex;align-items:center;justify-content:center;flex:0 0 auto;overflow:hidden;}
-  .uno-card.small{width:52px;height:76px;border-width:2px;border-radius:9px;}
+  .uno-card.small{width:56px;height:80px;border-width:2px;border-radius:9px;}
   .uno-card.colorless{background:
     conic-gradient(from 45deg,#F04646 0 25%,#F0E246 0 50%,#5DF046 0 75%,#4C46F0 0);}
-  .uno-oval{position:relative;width:74%;height:82%;border-radius:50%/38%;
-    background:rgba(255,255,255,.92);display:flex;align-items:center;justify-content:center;
-    transform:rotate(-16deg);overflow:hidden;}
-  .uno-card.colorless .uno-oval{background:rgba(20,20,26,.86);}
-  .uno-big{font-family:"Bebas Neue",sans-serif;color:var(--c);font-size:2.7rem;line-height:1;
-    transform:rotate(16deg);text-shadow:1px 1px 0 rgba(0,0,0,.15);}
-  .uno-card.small .uno-big{font-size:1.7rem;}
-  .uno-corner{position:absolute;font-family:"Bebas Neue",sans-serif;color:#fff;font-size:1.05rem;
-    line-height:1;text-shadow:1px 1px 2px rgba(0,0,0,.5);}
-  .uno-card.small .uno-corner{font-size:.72rem;}
+  /* number face: a clean untilted white oval + a big crisp digit */
+  .uno-face-num{width:72%;height:80%;border-radius:50%/40%;background:#fff;
+    display:flex;align-items:center;justify-content:center;}
+  .uno-big{font-family:"Bebas Neue","Arial Narrow",sans-serif;color:var(--c);
+    font-size:3rem;line-height:1;}
+  .uno-card.small .uno-big{font-size:1.95rem;}
+  .uno-corner{position:absolute;font-family:"Bebas Neue","Arial Narrow",sans-serif;color:#fff;
+    font-size:1.15rem;line-height:1;}
+  .uno-card.small .uno-corner{font-size:.75rem;}
   .uno-corner.tl{top:5px;left:8px;} .uno-corner.br{bottom:5px;right:8px;transform:rotate(180deg);}
-  .uno-sym{max-width:78%;max-height:78%;transform:rotate(16deg);object-fit:contain;position:relative;z-index:2;}
-  .uno-card.colorless .uno-sym{filter:none;}
-  .uno-fallback{position:absolute;font-family:"Bebas Neue",sans-serif;font-weight:700;
-    color:var(--c);font-size:1.15rem;transform:rotate(16deg);text-align:center;z-index:1;}
-  .uno-card.colorless .uno-fallback{color:#fff;}
-  .uno-card.small .uno-fallback{font-size:.8rem;}
+  /* symbol face: one BIG centered symbol with a soft backing panel */
+  .uno-symwrap{position:relative;width:90%;height:90%;display:flex;align-items:center;justify-content:center;}
+  .uno-symwrap::before{content:"";position:absolute;width:96%;height:74%;border-radius:16px;
+    background:rgba(255,255,255,.18);}
+  .uno-card.colorless .uno-symwrap::before{background:rgba(12,12,20,.55);}
+  .uno-sym{max-width:94%;max-height:94%;object-fit:contain;position:relative;z-index:2;
+    filter:drop-shadow(0 2px 3px rgba(0,0,0,.35));}
+  .uno-fallback{position:absolute;z-index:1;font-family:"Bebas Neue","Arial Narrow",sans-serif;
+    font-weight:700;color:#fff;font-size:1.5rem;line-height:1;text-align:center;
+    text-shadow:0 1px 2px rgba(0,0,0,.55);}
+  .uno-card.small .uno-fallback{font-size:.95rem;}
   .uno-card.back{background:#12203f;}
   .uno-back-img{width:100%;height:100%;object-fit:cover;}
   .uno-card.back.noimg{background:repeating-linear-gradient(45deg,#26325a,#26325a 8px,#1b2547 8px,#1b2547 16px);}

@@ -6,16 +6,64 @@
   const socket = window.socket;
   const root = document.getElementById("game-root");
   let state = null;
+  let prev = null;   // previous public state (for sound diffs)
   let cheats = [];
   unoInjectStyles();
 
+  // ----- Sound (same engine as Undercover): ONE music at a time (crossfaded),
+  // SFX played over it (the music ducks). Missing mp3 files simply stay silent,
+  // so you can add them later by dropping files in public/sounds/.
+  //   reglages.mp3  -> settings vote    ambiance.mp3 -> in-game (loops)
+  //   victoire.mp3  -> a player wins
+  //   carte.mp3 -> card played   pioche.mp3 -> draw   attaque.mp3 -> +2/+4
+  //   uno.mp3 -> a player calls UNO
+  if (window.Sound) {
+    Sound.registerAuto("reglages", "reglages");
+    Sound.registerAuto("ambiance", "ambiance", { loop: true });
+    Sound.registerAuto("victoire", "victoire");
+    Sound.registerAuto("carte", "carte");
+    Sound.registerAuto("pioche", "pioche");
+    Sound.registerAuto("attaque", "attaque");
+    Sound.registerAuto("uno", "uno");
+  }
+  function playSounds(p, s) {
+    if (!window.Sound) return;
+    if (!p || s.phase !== p.phase) { // phase changed -> switch the music
+      if (s.phase === "settings") Sound.music("reglages");
+      else if (s.phase === "playing") Sound.music("ambiance");
+      else if (s.phase === "ended") Sound.music("victoire");
+    }
+    if (!p || p.phase !== "playing" || s.phase !== "playing") return; // SFX only play-to-play
+    const topChanged = s.top && p.top && s.top.id !== p.top.id;
+    const pendingUp = (s.pendingDraw || 0) > (p.pendingDraw || 0);
+    if (topChanged) Sound.sfx(pendingUp ? "attaque" : "carte");
+    else {
+      const sum = (arr) => arr.reduce((t, x) => t + x.count, 0);
+      if (sum(s.players) > sum(p.players)) Sound.sfx("pioche");
+    }
+    const said = (arr) => arr.filter((x) => x.said && x.count === 1).map((x) => x.id).sort().join(",");
+    if (said(s.players) && said(s.players) !== said(p.players)) Sound.sfx("uno");
+  }
+
   // Load this game's declared cheats so we can show the host cheat bar.
   fetch("/api/games/cascade").then((r) => r.json())
-    .then((g) => { cheats = g.cheats || []; render(); })
+    .then((g) => { cheats = g.cheats || []; lastSig = null; render(); })
     .catch(() => {});
 
-  socket.on("cascade:state", (s) => { state = s; render(); });
+  socket.on("cascade:state", (s) => { playSounds(prev, s); prev = s; state = s; render(); });
   socket.on("cascade:cheatReveal", ({ hands }) => showHandsOverlay(hands));
+
+  // Skip rebuilding the DOM when nothing visible changed (prevents flicker).
+  let lastSig = null;
+  function stateSig(s) {
+    if (!s) return "";
+    if (s.phase === "settings") return "set|" + s.voted + "|" + s.total + "|" + JSON.stringify(s.counts) + "|" + cheats.length;
+    if (s.phase === "ended") return "end|" + s.winner + "|" + cheats.length;
+    return ["play", s.turn, s.dir, s.activeColor, s.pendingDraw, s.drawCount,
+      s.top && s.top.id, s.winner, cheats.length,
+      s.players.map((p) => p.id + ":" + p.count + ":" + (p.connected !== false ? 1 : 0) + ":" + (p.said ? 1 : 0)).join(","),
+      s.lastAction ? s.lastAction.name + s.lastAction.kind : ""].join("|");
+  }
 
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
 
@@ -43,6 +91,9 @@
 
   function render() {
     if (!state) return;
+    const sg = stateSig(state);
+    if (sg === lastSig) return; // nothing visible changed -> don't rebuild the DOM
+    lastSig = sg;
     const s = state;
     let html = "";
 
