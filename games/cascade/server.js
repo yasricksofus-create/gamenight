@@ -13,6 +13,12 @@ const COLORS = ["R", "J", "V", "B"];
 const SETTINGS_SECONDS = 60;
 const HAND_SIZE = 7;
 
+// Auto-avatars for the host "table" view (players don't pick yet).
+const AVATAR_COLORS = ["#F04646", "#F0A020", "#F0E246", "#5DF046", "#2ED0C0",
+  "#4C46F0", "#9B5DE5", "#F15BB5", "#00BBF9", "#FF7B54", "#8AC926", "#E86AF0"];
+const AVATAR_EMOJIS = ["🦊", "🐼", "🐧", "🐸", "🐙", "🦄", "🐯", "🐨", "🦁", "🐵",
+  "🐰", "🐳", "🦉", "🐝", "🦖", "🐢"];
+
 // How many of each custom card go in the deck (from the user's "Max de carte").
 const CUSTOM_COUNTS = { flush: 8, pay: 10, print: 8, plus1: 4, protect: 4 };
 
@@ -99,8 +105,17 @@ function checkWin(s) {
 // ---------- broadcasting ----------
 function topCard(s) { return s.discard[s.discard.length - 1]; }
 
+function handSig(cards) { return cards.length + ":" + cards.map((c) => c.id).join(","); }
 function sendHands(api, s) {
-  s.players.forEach((id) => api.toPlayer(id, "cascade:hand", { hand: s.hands[id] }));
+  // Only re-send a hand that actually changed since last time (most actions touch
+  // just 1-2 hands), instead of every player's hand on every update.
+  s._handSig = s._handSig || {};
+  s.players.forEach((id) => {
+    const sig = handSig(s.hands[id] || []);
+    if (s._handSig[id] === sig) return;
+    s._handSig[id] = sig;
+    api.toPlayer(id, "cascade:hand", { hand: s.hands[id] });
+  });
 }
 function broadcast(api, room) {
   const s = room.gameState;
@@ -123,6 +138,7 @@ function broadcast(api, room) {
     players: s.players.map((id) => ({
       id, name: s.names[id], count: s.hands[id].length,
       connected: api.connected(id), said: !!s.saidUno[id],
+      avatar: (s.avatars && s.avatars[id]) || null,
     })),
     turn: s.players[s.turn],
     dir: s.dir,
@@ -152,6 +168,14 @@ function deal(api, room) {
   const players = api.players();
   s.players = players.map((p) => p.id);
   s.names = {}; players.forEach((p) => (s.names[p.id] = p.name));
+
+  // Auto-assign a distinct avatar (emoji + color) per player for the table view.
+  // (Kept in state so it stays stable for the whole round.)
+  const cols = shuffle(AVATAR_COLORS), emos = shuffle(AVATAR_EMOJIS);
+  s.avatars = {};
+  s.players.forEach((id, i) => {
+    s.avatars[id] = { color: cols[i % cols.length], emoji: emos[i % emos.length] };
+  });
 
   s.drawPile = shuffle(buildDeck(s.settings.rules.customs));
   s.hands = {};

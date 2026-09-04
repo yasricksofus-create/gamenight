@@ -17,14 +17,17 @@
   //   victoire.mp3  -> a player wins
   //   carte.mp3 -> card played   pioche.mp3 -> draw   attaque.mp3 -> +2/+4
   //   uno.mp3 -> a player calls UNO
+  // IMPORTANT: Cascade has its OWN sounds folder so it never shares Undercover's
+  // music. Drop Cascade's mp3 files in  public... no -> games/cascade/sounds/.
+  const SND = { dir: "/games/cascade/sounds/" };
   if (window.Sound) {
-    Sound.registerAuto("reglages", "reglages");
-    Sound.registerAuto("ambiance", "ambiance", { loop: true });
-    Sound.registerAuto("victoire", "victoire");
-    Sound.registerAuto("carte", "carte");
-    Sound.registerAuto("pioche", "pioche");
-    Sound.registerAuto("attaque", "attaque");
-    Sound.registerAuto("uno", "uno");
+    Sound.registerAuto("reglages", "reglages", { dir: SND.dir });
+    Sound.registerAuto("ambiance", "ambiance", { loop: true, dir: SND.dir });
+    Sound.registerAuto("victoire", "victoire", { dir: SND.dir });
+    Sound.registerAuto("carte", "carte", { dir: SND.dir });
+    Sound.registerAuto("pioche", "pioche", { dir: SND.dir });
+    Sound.registerAuto("attaque", "attaque", { dir: SND.dir });
+    Sound.registerAuto("uno", "uno", { dir: SND.dir });
   }
   function playSounds(p, s) {
     if (!window.Sound) return;
@@ -53,17 +56,11 @@
   socket.on("cascade:state", (s) => { playSounds(prev, s); prev = s; state = s; render(); });
   socket.on("cascade:cheatReveal", ({ hands }) => showHandsOverlay(hands));
 
-  // Skip rebuilding the DOM when nothing visible changed (prevents flicker).
-  let lastSig = null;
-  function stateSig(s) {
-    if (!s) return "";
-    if (s.phase === "settings") return "set|" + s.voted + "|" + s.total + "|" + JSON.stringify(s.counts) + "|" + cheats.length;
-    if (s.phase === "ended") return "end|" + s.winner + "|" + cheats.length;
-    return ["play", s.turn, s.dir, s.activeColor, s.pendingDraw, s.drawCount,
-      s.top && s.top.id, s.winner, cheats.length,
-      s.players.map((p) => p.id + ":" + p.count + ":" + (p.connected !== false ? 1 : 0) + ":" + (p.said ? 1 : 0)).join(","),
-      s.lastAction ? s.lastAction.name + s.lastAction.kind : ""].join("|");
-  }
+  // View state: the static phases (settings / ended) are (re)built from a
+  // signature; the PLAYING "table" is built ONCE then updated incrementally
+  // (targeted DOM writes only) so it never fully rebuilds -> stable FPS.
+  let lastStatic = null;   // signature of the static screen currently shown
+  let builtRoster = null;  // the roster the table skeleton was built for
 
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
 
@@ -91,74 +88,158 @@
 
   function render() {
     if (!state) return;
-    const sg = stateSig(state);
-    if (sg === lastSig) return; // nothing visible changed -> don't rebuild the DOM
-    lastSig = sg;
     const s = state;
-    let html = "";
+    if (s.phase === "settings") return renderSettings(s);
+    if (s.phase === "ended") return renderEnded(s);
+    if (s.phase === "playing") return renderPlaying(s);
+  }
 
-    if (s.phase === "settings") {
-      const rows = RULES.map((r) => {
-        const c = (s.counts && s.counts[r.key]) || [0, 0];
-        return `<div class="uno-rule"><h3>${r.name}</h3><p>${r.desc}</p>
-          <div class="uno-tally">Pour : <strong>${c[0]}</strong> &nbsp;·&nbsp; Contre : <strong>${c[1]}</strong></div></div>`;
-      }).join("");
-      html = `<div class="uno-wrap"><p class="uno-eyebrow">Mise en place</p>
-        <h1 class="uno-title">Reglages de la partie</h1>
-        <p class="uno-sub">Les joueurs votent les regles sur leur telephone — <strong id="uno-countdown">…</strong></p>
-        <div class="uno-rules">${rows}</div>
-        <p class="uno-sub">${s.voted || 0}/${s.total || 0} ont vote</p>
-        <button id="uno-finalize" class="uno-btn">Lancer maintenant</button></div>`;
-    } else if (s.phase === "playing") {
-      html = `<div class="uno-wrap">${tableHtml(s)}${cheatBar()}</div>`;
-    } else if (s.phase === "ended") {
-      const winName = winnerName(s);
-      html = `<div class="uno-wrap" style="text-align:center">
-        <p class="uno-eyebrow">Fin de la manche</p>
-        <h1 class="uno-win">🎉 ${winName} a vide sa main !</h1>
-        <p class="uno-sub">Vous pouvez relancer une manche (nouveau vote des regles).</p>
-        <button id="uno-replay" class="uno-btn">Rejouer</button>${cheatBar()}</div>`;
-    }
-
-    root.innerHTML = html;
+  // ----- static screens (rebuilt only when their signature changes) -----
+  function renderSettings(s) {
+    builtRoster = null; // force a fresh table build when the game starts
+    const sig = "set|" + s.voted + "|" + s.total + "|" + JSON.stringify(s.counts) + "|" + cheats.length;
+    if (sig === lastStatic) return;
+    lastStatic = sig;
+    const rows = RULES.map((r) => {
+      const c = (s.counts && s.counts[r.key]) || [0, 0];
+      return `<div class="uno-rule"><h3>${r.name}</h3><p>${r.desc}</p>
+        <div class="uno-tally">Pour : <strong>${c[0]}</strong> &nbsp;·&nbsp; Contre : <strong>${c[1]}</strong></div></div>`;
+    }).join("");
+    root.innerHTML = `<div class="uno-wrap"><p class="uno-eyebrow">Mise en place</p>
+      <h1 class="uno-title">Reglages de la partie</h1>
+      <p class="uno-sub">Les joueurs votent les regles sur leur telephone — <strong id="uno-countdown">…</strong></p>
+      <div class="uno-rules">${rows}</div>
+      <p class="uno-sub">${s.voted || 0}/${s.total || 0} ont vote</p>
+      <button id="uno-finalize" class="uno-btn">Lancer maintenant</button></div>`;
     bind("uno-finalize", () => send("finalizeSettings"));
+  }
+  function renderEnded(s) {
+    builtRoster = null;
+    const sig = "end|" + s.winner + "|" + cheats.length;
+    if (sig === lastStatic) return;
+    lastStatic = sig;
+    root.innerHTML = `<div class="uno-wrap" style="text-align:center">
+      <p class="uno-eyebrow">Fin de la manche</p>
+      <h1 class="uno-win">🎉 ${winnerName(s)} a vide sa main !</h1>
+      <p class="uno-sub">Vous pouvez relancer une manche (nouveau vote des regles).</p>
+      <button id="uno-replay" class="uno-btn">Rejouer</button>${cheatBar()}</div>`;
     bind("uno-replay", () => send("replay"));
-    root.querySelectorAll(".uno-cheat").forEach((b) => {
-      b.onclick = () => socket.emit("host:cheat", { cheatId: b.getAttribute("data-cheat") });
+    wireCheats();
+  }
+
+  // ----- the TABLE (built once per roster, then updated incrementally) -----
+  function renderPlaying(s) {
+    lastStatic = null; // leaving a static screen next time forces a rebuild
+    const roster = s.players.map((p) => p.id).join(",");
+    if (builtRoster !== roster) { buildTable(s); builtRoster = roster; }
+    updateTable(s);
+  }
+
+  // Even placement around the felt ellipse (full circle, starts at the bottom).
+  function podPositions(n) {
+    const pos = [];
+    for (let i = 0; i < n; i++) {
+      const a = Math.PI / 2 + (i * 2 * Math.PI) / n; // bottom -> clockwise
+      // Radius kept < 50% so pods sit ON the felt (never clipped at the edges).
+      pos.push({ x: 50 + 46 * Math.cos(a), y: 50 + 46 * Math.sin(a) });
+    }
+    return pos;
+  }
+  function buildTable(s) {
+    const n = s.players.length;
+    const scale = Math.max(0.6, Math.min(1, 1 - (n - 4) * 0.075));
+    const pod = Math.round(154 * scale);
+    const code = (document.getElementById("room-code") || {}).textContent || "";
+    const pos = podPositions(n);
+    const pods = s.players.map((p, i) => `
+      <div class="cscd-pod" data-seat="${p.id}" style="left:${pos[i].x}%;top:${pos[i].y}%">
+        <div class="cscd-av" data-av></div>
+        <div class="nm" data-nm></div>
+        <div class="cscd-fan" data-fan></div>
+        <span class="cscd-cnt" data-cnt></span>
+        <div class="act" data-act></div>
+      </div>`).join("");
+    root.innerHTML = `<div class="cscd-stage" style="--pod:${pod}px">
+      <div class="cscd-top">
+        ${code ? `<span class="cscd-chip">Salle ${code}</span>` : ""}
+        <span class="cscd-title" data-title>Cascade</span>
+      </div>
+      <div class="cscd-table">
+        <div class="cscd-center">
+          <div class="cscd-piles">
+            <div class="cscd-pile"><span class="lbl">Pioche</span>${unoBackHtml(0, true)}<span class="cscd-chip" data-draw>0</span></div>
+            <div class="cscd-pile"><span class="lbl">Defausse</span><span data-disc></span></div>
+          </div>
+          <div class="cscd-info">
+            <span class="cscd-chip" data-color></span>
+            <span class="cscd-chip" data-dir></span>
+            <span class="cscd-pending" data-pending hidden></span>
+          </div>
+        </div>
+        ${pods}
+      </div>
+      <div class="cscd-cheatwrap">${cheatBar()}</div>
+    </div>`;
+    wireCheats();
+  }
+
+  function updateTable(s) {
+    const stage = root.querySelector(".cscd-stage");
+    if (!stage) return;
+    const set = (sel, txt) => { const el = stage.querySelector(sel); if (el && el.textContent !== txt) el.textContent = txt; };
+
+    set("[data-title]", "Au tour de " + turnName(s));
+    set("[data-draw]", "🂠 " + s.drawCount);
+    // discard: rebuild only when the top card actually changes
+    const disc = stage.querySelector("[data-disc]");
+    if (disc && disc.dataset.top !== (s.top && s.top.id)) {
+      disc.innerHTML = unoCardHtml(s.top);
+      disc.dataset.top = s.top && s.top.id;
+    }
+    const color = stage.querySelector("[data-color]");
+    if (color) color.innerHTML = unoDot(s.activeColor) + " " + (UNO_COLOR_NAMES[s.activeColor] || "—");
+    set("[data-dir]", "Sens " + (s.dir === 1 ? "↻" : "↺"));
+    const pend = stage.querySelector("[data-pending]");
+    if (pend) { pend.hidden = !(s.pendingDraw > 0); pend.textContent = "+" + s.pendingDraw; }
+
+    s.players.forEach((p) => {
+      const pod = stage.querySelector('[data-seat="' + p.id + '"]');
+      if (!pod) return;
+      const av = pod.querySelector("[data-av]");
+      if (p.avatar) { av.style.background = p.avatar.color; if (av.textContent !== p.avatar.emoji) av.textContent = p.avatar.emoji; }
+      else { av.style.background = "#4C46F0"; av.textContent = (p.name || "?")[0].toUpperCase(); }
+      const nm = pod.querySelector("[data-nm]"); if (nm.textContent !== p.name) nm.textContent = p.name;
+      pod.classList.toggle("turn", p.id === s.turn);
+      pod.classList.toggle("off", p.connected === false);
+      // fan of backs: rebuild only when the count changes
+      const fan = pod.querySelector("[data-fan]");
+      if (fan.dataset.n !== String(p.count)) { fan.innerHTML = fanHtml(p.count); fan.dataset.n = String(p.count); }
+      const cnt = pod.querySelector("[data-cnt]");
+      const ct = p.count + (p.count > 1 ? " cartes" : " carte");
+      if (cnt.textContent !== ct) cnt.textContent = ct;
+      // action line: UNO shout, else the card this player just played
+      const act = pod.querySelector("[data-act]");
+      let a = "";
+      if (p.said && p.count === 1) a = '<span class="cscd-uno">UNO !</span>';
+      else if (s.lastAction && s.lastAction.name === p.name) a = lastActionLabel(s.lastAction);
+      if (act.dataset.v !== a) { act.innerHTML = a; act.dataset.v = a; }
     });
   }
 
-  function tableHtml(s) {
-    const dirArrow = s.dir === 1 ? "↻" : "↺";
-    const activeColorName = UNO_COLOR_NAMES[s.activeColor] || "—";
-    const pending = s.pendingDraw > 0
-      ? `<div class="uno-pending">⚠ Pioche en attente : +${s.pendingDraw}</div>` : "";
-    const last = s.lastAction
-      ? `<p class="uno-sub"><strong>${s.lastAction.name}</strong> a joue ${lastActionLabel(s.lastAction)}.</p>` : "";
-
-    const center = `<div class="uno-center">
-      <div class="uno-pile"><span class="uno-pile-label">Pioche (${s.drawCount})</span>${unoBackHtml(0)}</div>
-      <div class="uno-pile"><span class="uno-pile-label">Defausse</span>${unoCardHtml(s.top)}</div>
-      <div class="uno-pile"><span class="uno-pile-label">Couleur active</span>
-        <span class="uno-colorchip">${unoDot(s.activeColor)} ${activeColorName}</span>
-        <span class="uno-dir">Sens ${dirArrow}</span></div>
-    </div>`;
-
-    const seats = `<div class="uno-seats">` + s.players.map((p) => {
-      const isTurn = p.id === s.turn;
-      const mini = `<span class="uno-mini">` +
-        Array.from({ length: Math.min(p.count, 12) }, () => `<span class="m"></span>`).join("") + `</span>`;
-      const said = p.said && p.count === 1 ? ` <span class="uno-said">UNO!</span>` : "";
-      const off = p.connected === false ? " off" : "";
-      return `<div class="uno-seat${isTurn ? " turn" : ""}${off}">
-        <div><div class="uno-seat-name">${p.name}${said}</div>
-        <div class="uno-seat-meta">${p.count} carte${p.count > 1 ? "s" : ""}${p.connected === false ? " · deconnecte" : ""}</div></div>
-        ${mini}</div>`;
-    }).join("") + `</div>`;
-
-    return `<p class="uno-eyebrow">Cascade — en jeu</p>
-      <h1 class="uno-title">Au tour de ${turnName(s)}</h1>
-      ${pending}${center}${seats}${last}`;
+  function fanHtml(count) {
+    const k = Math.max(0, Math.min(count, 5));
+    let h = "";
+    for (let i = 0; i < k; i++) {
+      const t = k > 1 ? i - (k - 1) / 2 : 0;
+      const img = UNO_BACKS[i % UNO_BACKS.length];
+      h += `<span class="b" style="background-image:url('${img}');transform:translate(calc(-50% + ${t * 11}px),0) rotate(${t * 8}deg)"></span>`;
+    }
+    return h;
+  }
+  function wireCheats() {
+    root.querySelectorAll(".uno-cheat").forEach((b) => {
+      b.onclick = () => socket.emit("host:cheat", { cheatId: b.getAttribute("data-cheat") });
+    });
   }
 
   function lastActionLabel(a) {

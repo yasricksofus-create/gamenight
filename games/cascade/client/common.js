@@ -121,8 +121,7 @@ window.unoInjectStyles = function () {
   .uno-symwrap::before{content:"";position:absolute;width:96%;height:74%;border-radius:16px;
     background:rgba(255,255,255,.18);}
   .uno-card.colorless .uno-symwrap::before{background:rgba(12,12,20,.55);}
-  .uno-sym{max-width:94%;max-height:94%;object-fit:contain;position:relative;z-index:2;
-    filter:drop-shadow(0 2px 3px rgba(0,0,0,.35));}
+  .uno-sym{max-width:94%;max-height:94%;object-fit:contain;position:relative;z-index:2;}
   .uno-fallback{position:absolute;z-index:1;font-family:"Bebas Neue","Arial Narrow",sans-serif;
     font-weight:700;color:#fff;font-size:1.5rem;line-height:1;text-align:center;
     text-shadow:0 1px 2px rgba(0,0,0,.55);}
@@ -191,6 +190,56 @@ window.unoInjectStyles = function () {
     color:#fff;padding:10px 18px;border-radius:999px;z-index:30;font-weight:600;opacity:0;
     transition:opacity .25s;pointer-events:none;}
   .uno-toast.show{opacity:1;}
+  /* ===== Cascade host TABLE view (playing phase) ===== */
+  /* Break out of the page's narrow centered column to use the FULL viewport width. */
+  .cscd-stage{position:relative;width:100vw;left:50%;margin-left:-50vw;min-height:calc(100vh - 8px);
+    overflow:hidden;--pod:154px;
+    background:
+      linear-gradient(rgba(6,10,26,.30),rgba(4,7,20,.72)),
+      url("/games/cascade/img/fond.jpg"),
+      radial-gradient(circle at 50% 34%, #263a7a 0%, #101a3e 52%, #05070f 100%);
+    background-size:cover;background-position:center;background-repeat:no-repeat;}
+  .cscd-top{position:absolute;top:12px;left:0;right:0;z-index:5;display:flex;justify-content:center;
+    gap:10px;align-items:center;flex-wrap:wrap;pointer-events:none;}
+  .cscd-title{font-family:"Bebas Neue","Arial Narrow",sans-serif;font-size:1.8rem;letter-spacing:.02em;
+    text-shadow:0 2px 6px rgba(0,0,0,.7);}
+  .cscd-chip{background:rgba(0,0,0,.42);border:1px solid rgba(255,255,255,.16);border-radius:999px;
+    padding:5px 13px;font-weight:700;display:inline-flex;align-items:center;gap:7px;font-size:.9rem;}
+  /* the felt table */
+  .cscd-table{position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);
+    width:min(70vw,780px);height:min(56vh,520px);border-radius:50%;
+    background:radial-gradient(circle at 50% 38%, #2a7d55 0%, #17603c 68%, #0f4429 100%);
+    box-shadow:inset 0 0 70px rgba(0,0,0,.55),0 24px 70px rgba(0,0,0,.55);border:11px solid #2c1c13;}
+  .cscd-table::after{content:"";position:absolute;inset:16px;border-radius:50%;
+    border:2px dashed rgba(255,255,255,.10);pointer-events:none;}
+  /* center piles */
+  .cscd-center{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;
+    display:flex;flex-direction:column;align-items:center;gap:9px;}
+  .cscd-piles{display:flex;align-items:center;gap:16px;}
+  .cscd-pile{display:flex;flex-direction:column;align-items:center;gap:4px;}
+  .cscd-pile .lbl{font-size:.66rem;letter-spacing:.09em;text-transform:uppercase;opacity:.8;}
+  .cscd-info{display:flex;align-items:center;gap:9px;flex-wrap:wrap;justify-content:center;}
+  .cscd-pending{background:#F04646;color:#fff;padding:4px 13px;border-radius:999px;font-weight:800;}
+  /* a player pod, absolutely placed on the ring */
+  .cscd-pod{position:absolute;transform:translate(-50%,-50%);z-index:3;width:calc(var(--pod));
+    text-align:center;transition:opacity .2s;}
+  .cscd-av{width:calc(var(--pod)*.44);height:calc(var(--pod)*.44);border-radius:50%;margin:0 auto;
+    display:flex;align-items:center;justify-content:center;font-size:calc(var(--pod)*.24);line-height:1;
+    border:3px solid rgba(255,255,255,.85);box-shadow:0 5px 12px rgba(0,0,0,.45);}
+  .cscd-pod .nm{font-weight:800;font-size:calc(var(--pod)*.115);margin-top:3px;white-space:nowrap;
+    text-shadow:0 1px 3px rgba(0,0,0,.7);overflow:hidden;text-overflow:ellipsis;}
+  .cscd-pod .act{font-size:calc(var(--pod)*.093);min-height:1.05em;opacity:.92;
+    text-shadow:0 1px 2px rgba(0,0,0,.7);}
+  .cscd-fan{position:relative;height:calc(var(--pod)*.34);margin-top:3px;}
+  .cscd-fan .b{position:absolute;left:50%;bottom:0;width:calc(var(--pod)*.2);height:calc(var(--pod)*.3);
+    border-radius:4px;border:1px solid rgba(255,255,255,.55);background-size:cover;background-position:center;
+    background-color:#26325a;transform-origin:bottom center;}
+  .cscd-cnt{display:inline-block;margin-top:3px;font-size:calc(var(--pod)*.1);font-weight:800;
+    background:rgba(0,0,0,.5);border-radius:999px;padding:1px 9px;}
+  .cscd-pod.turn .cscd-av{border-color:#FFD54A;box-shadow:0 0 0 4px rgba(255,213,74,.45),0 0 24px rgba(255,213,74,.7);}
+  .cscd-pod.off{opacity:.42;}
+  .cscd-uno{color:#FFD54A;font-weight:900;}
+  .cscd-cheatwrap{position:absolute;left:0;right:0;bottom:10px;z-index:5;}
   `;
   document.head.appendChild(st);
 };

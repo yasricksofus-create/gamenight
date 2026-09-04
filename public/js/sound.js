@@ -1,4 +1,7 @@
-// sound.js -- Sound manager (used ONLY by the Undercover game today).
+// sound.js -- Generic sound manager, shared by all games.
+//
+// Each game passes its OWN sounds folder via opts.dir (so two games never share
+// the same music). Undercover uses /sounds/ ; Cascade uses /games/cascade/sounds/.
 //
 // Two kinds of sounds:
 //   MUSIC (reglages, ambiance, vote, victoire): only one plays at a time.
@@ -74,16 +77,24 @@ window.Sound = (function () {
   // the sounds folder is enough -- NO code change needed to add sounds.
   function registerAuto(key, base, opts) {
     opts = opts || {};
-    const found = ["/sounds/" + base + ".mp3"];
+    const dir = opts.dir || "/sounds/"; // each game can point at its OWN folder
+    const baseUrl = dir + base + ".mp3";
+    const found = [baseUrl];
     register(key, found, opts); // available immediately with the base file
-    const probes = [];
-    for (let i = 2; i <= 8; i++) probes.push("/sounds/" + base + i + ".mp3");
-    Promise.all(
-      probes.map((u) => fetch(u, { method: "HEAD" }).then((r) => (r.ok ? u : null)).catch(() => null))
-    ).then((results) => {
-      results.forEach((u) => { if (u) found.push(u); });
-      if (found.length > 1) register(key, found, opts); // re-register with variants
-    });
+    // Discover variants (<base>2..8.mp3) ONLY if the base file exists. This
+    // avoids a burst of 404 HEAD requests on every load for games that have no
+    // sound files yet (7 probes/key -> 1).
+    fetch(baseUrl, { method: "HEAD" }).then((r) => {
+      if (!r.ok) return;
+      const probes = [];
+      for (let i = 2; i <= 8; i++) probes.push(dir + base + i + ".mp3");
+      return Promise.all(
+        probes.map((u) => fetch(u, { method: "HEAD" }).then((x) => (x.ok ? u : null)).catch(() => null))
+      ).then((results) => {
+        results.forEach((u) => { if (u) found.push(u); });
+        if (found.length > 1) register(key, found, opts); // re-register with variants
+      });
+    }).catch(() => {});
   }
 
   function pickIndex(r) {

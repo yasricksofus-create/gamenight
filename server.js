@@ -16,8 +16,30 @@ const http = require("http");
 const crypto = require("crypto");
 const { Server } = require("socket.io");
 const path = require("path");
+const fs = require("fs");
 // The engine loads every game from its own folder under /games (see the loader).
 const { games, getGameById, gameModules } = require("./engine/games-loader");
+
+// ----- Player feedback -----
+// Feedback typed in-game is sent HERE. It always goes to the server logs and a
+// local file (feedback.log); if a Discord webhook URL is configured it is ALSO
+// posted to that channel (the recommended "shared folder"). Set the webhook in
+// Render: Environment -> add  FEEDBACK_WEBHOOK = https://discord.com/api/webhooks/...
+const FEEDBACK_WEBHOOK = process.env.FEEDBACK_WEBHOOK || "";
+function recordFeedback(f) {
+  const line = `[FEEDBACK] ${f.at} | ${f.game} | salle ${f.code} | ${f.who}: ${f.text}`;
+  console.log(line);
+  try { fs.appendFileSync(path.join(__dirname, "feedback.log"), line + "\n"); } catch (e) {}
+  if (FEEDBACK_WEBHOOK && typeof fetch === "function") {
+    const content = `📝 **Feedback** — *${f.game}* (salle ${f.code})\n**${f.who}** : ${f.text}`;
+    // allowed_mentions: {parse:[]} stops any @everyone / @here injection.
+    fetch(FEEDBACK_WEBHOOK, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: content.slice(0, 1900), allowed_mentions: { parse: [] } }),
+    }).catch(() => {});
+  }
+}
 
 const app = express();
 const server = http.createServer(app);
@@ -247,6 +269,28 @@ io.on("connection", (socket) => {
     if (!module || !module.onReconnect) return;
     const who = socket.data.role === "host" ? { isHost: true } : { seatId: socket.data.seatId };
     module.onReconnect(makeApi(room), room, who);
+  });
+
+  // ---------- Player feedback (in-game "Feedback" button) ----------
+  socket.on("feedback", ({ text } = {}) => {
+    if (typeof text !== "string") return;
+    text = text.trim().replace(/\s+\n/g, "\n").slice(0, 1000);
+    if (!text) return;
+    const now = Date.now();
+    if (socket.data.lastFeedback && now - socket.data.lastFeedback < 4000) return; // anti-spam
+    socket.data.lastFeedback = now;
+    const room = rooms[socket.data.code];
+    let who = "Anonyme", game = "?", code = socket.data.code || "?";
+    if (room) {
+      game = room.gameId;
+      if (socket.data.role === "host") who = "Host";
+      else {
+        const p = room.players.find((x) => x.seatId === socket.data.seatId);
+        who = p ? p.name : "Joueur";
+      }
+    }
+    recordFeedback({ who, game, code, text, at: new Date().toISOString() });
+    socket.emit("feedback:ok");
   });
 
   // ---------- Disconnect: start a grace timer, don't drop immediately ----------
