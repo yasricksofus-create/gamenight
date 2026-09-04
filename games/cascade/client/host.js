@@ -17,17 +17,28 @@
   //   victoire.mp3  -> a player wins
   //   carte.mp3 -> card played   pioche.mp3 -> draw   attaque.mp3 -> +2/+4
   //   uno.mp3 -> a player calls UNO
-  // IMPORTANT: Cascade has its OWN sounds folder so it never shares Undercover's
-  // music. Drop Cascade's mp3 files in  public... no -> games/cascade/sounds/.
-  const SND = { dir: "/games/cascade/sounds/" };
+  // Cascade has its OWN sounds folder so it never shares Undercover's music.
+  // Files are in games/cascade/sounds/ ; missing ones simply stay silent.
+  const DIR = "/games/cascade/sounds/";
   if (window.Sound) {
-    Sound.registerAuto("reglages", "reglages", { dir: SND.dir });
-    Sound.registerAuto("ambiance", "ambiance", { loop: true, dir: SND.dir });
-    Sound.registerAuto("victoire", "victoire", { dir: SND.dir });
-    Sound.registerAuto("carte", "carte", { dir: SND.dir });
-    Sound.registerAuto("pioche", "pioche", { dir: SND.dir });
-    Sound.registerAuto("attaque", "attaque", { dir: SND.dir });
-    Sound.registerAuto("uno", "uno", { dir: SND.dir });
+    // In-game music: the user's 4 variants (one picked at random each game).
+    // Big files (~14 MB total) -> preload "none" so the page doesn't fetch them
+    // up front; the chosen track loads only when it actually starts playing.
+    Sound.register("ambiance", [
+      DIR + "ambiance.cascade.mp3",
+      DIR + "ambiance.cascade2.mp3",
+      DIR + "ambiance.cascade3.mp3",
+      DIR + "cascade.ambiance4.mp3",
+    ], { loop: true, preload: "none" });
+    // Same short "card drop" sound for playing a card AND for drawing.
+    Sound.register("carte", [DIR + "Card-Pioche-Droppingcard-.mp3"]);
+    Sound.register("pioche", [DIR + "Card-Pioche-Droppingcard-.mp3"]);
+    // Not provided yet -> stay silent until you drop the file (auto-discovered,
+    // so just add reglages.mp3 / victoire.mp3 / attaque.mp3 / uno.mp3 later).
+    Sound.registerAuto("reglages", "reglages", { dir: DIR });
+    Sound.registerAuto("victoire", "victoire", { dir: DIR });
+    Sound.registerAuto("attaque", "attaque", { dir: DIR });
+    Sound.registerAuto("uno", "uno", { dir: DIR });
   }
   function playSounds(p, s) {
     if (!window.Sound) return;
@@ -38,8 +49,9 @@
     }
     if (!p || p.phase !== "playing" || s.phase !== "playing") return; // SFX only play-to-play
     const topChanged = s.top && p.top && s.top.id !== p.top.id;
-    const pendingUp = (s.pendingDraw || 0) > (p.pendingDraw || 0);
-    if (topChanged) Sound.sfx(pendingUp ? "attaque" : "carte");
+    // Every posed card gets the "card drop" sound (you have no separate attack
+    // sound yet; when you add attaque.mp3 I can give +2/+4 their own sting).
+    if (topChanged) Sound.sfx("carte");
     else {
       const sum = (arr) => arr.reduce((t, x) => t + x.count, 0);
       if (sum(s.players) > sum(p.players)) Sound.sfx("pioche");

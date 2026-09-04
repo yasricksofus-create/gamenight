@@ -64,7 +64,7 @@ window.Sound = (function () {
       current: null,
       audios: list.map((u) => {
         const a = new Audio(u);
-        a.preload = "auto";
+        a.preload = opts.preload || "auto"; // "none" = load only when played (big music)
         a.loop = !!opts.loop;
         return a;
       }),
