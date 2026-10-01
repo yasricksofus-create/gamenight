@@ -8,8 +8,9 @@
 // Players are identified by their stable seatId. The chosen songs are secret:
 // the public state never reveals an owner until the round's reveal.
 
-const MIN_PLAYERS = 3;
+const MIN_PLAYERS = 2; // + the host (who also plays) = 3 participants minimum
 const ROUND_MS = 30000; // a round lasts the length of the 30s preview
+const HOST_SEAT = "__host__"; // on Kietkoutsa the host ALSO plays (submits + votes)
 
 // Reused auto-avatars (emoji + colour) for the host display.
 const AV_COLORS = ["#F04646", "#F0A020", "#F0E246", "#5DF046", "#2ED0C0",
@@ -101,7 +102,7 @@ function broadcast(api, room) {
       perPlayer: s.settings.perPlayer,
       players: s.players.map((id) => ({
         id, name: s.names[id], avatar: s.avatars[id],
-        connected: api.connected(id),
+        connected: id === HOST_SEAT ? true : api.connected(id),
         done: (s.subs[id] || []).length, // how many songs submitted so far
       })),
     }));
@@ -114,7 +115,7 @@ function broadcast(api, room) {
       votedCount: Object.keys(s.votes).length,
       players: s.players.map((id) => ({
         id, name: s.names[id], avatar: s.avatars[id],
-        connected: api.connected(id), voted: s.votes[id] != null, score: s.scores[id] || 0,
+        connected: id === HOST_SEAT ? true : api.connected(id), voted: s.votes[id] != null, score: s.scores[id] || 0,
       })),
     }));
   } else if (s.phase === "reveal") {
@@ -137,13 +138,16 @@ function broadcast(api, room) {
   }
 
   // Private per-player info (their own submissions + their current vote).
+  // The host is a player too: its private info goes over toHost.
   s.players.forEach((id) => {
-    api.toPlayer(id, "kkt:you", {
+    const you = {
       subs: s.subs[id] || [],
       perPlayer: s.settings.perPlayer,
       vote: s.votes[id] || null,
       isOwner: s.phase === "playing" && s.current && s.current.owner === id,
-    });
+    };
+    if (id === HOST_SEAT) api.toHost("kkt:you", you);
+    else api.toPlayer(id, "kkt:you", you);
   });
 }
 
@@ -209,16 +213,18 @@ module.exports = {
 
   start(api, room) {
     const players = api.players();
+    const ids = players.map((p) => p.id).concat([HOST_SEAT]); // the host is a player too
     const s = {
       phase: "settings",
       settings: { perPlayer: 1, playback: "all" }, // host adjusts
-      players: players.map((p) => p.id),
+      players: ids,
       names: {}, avatars: {}, scores: {},
       subs: {}, queue: [], idx: -1, current: null, votes: {},
       endsAt: 0, timer: null, botTimers: [], trackScores: [], result: null,
     };
     players.forEach((p) => { s.names[p.id] = p.name; s.scores[p.id] = 0; });
-    assignAvatars(s, players);
+    s.names[HOST_SEAT] = "Hote"; s.scores[HOST_SEAT] = 0;
+    assignAvatars(s, ids.map((id) => ({ id })));
     room.gameState = s;
     broadcast(api, room);
   },
@@ -226,8 +232,8 @@ module.exports = {
   handle(api, actor, room, type, payload) {
     const s = room.gameState;
     if (!s) return;
-    const me = actor.seatId;
     const host = actor.isHost;
+    const me = host ? HOST_SEAT : actor.seatId; // the host plays as the HOST seat
     payload = payload || {};
 
     // ----- settings (host only) -----
@@ -247,21 +253,22 @@ module.exports = {
       return;
     }
 
-    // ----- submissions -----
+    // ----- submissions (players AND the host submit) -----
     if (s.phase === "submit") {
-      if (!host && type === "submitTrack") {
+      if (type === "submitTrack") {
         const t = payload.track;
         if (t && t.preview && (s.subs[me] || []).length < s.settings.perPlayer) {
           s.subs[me] = s.subs[me] || [];
           s.subs[me].push({ id: String(t.id || ""), title: t.title || "?", artist: t.artist || "", cover: t.cover || "", preview: t.preview });
           broadcast(api, room);
         }
-      } else if (!host && type === "removeTrack") {
+      } else if (type === "removeTrack") {
         s.subs[me] = (s.subs[me] || []).filter((x) => x.id !== payload.trackId);
         broadcast(api, room);
       } else if (host && type === "startRounds") {
-        // Need every CONNECTED player to have submitted all their songs.
-        const ready = s.players.every((id) => !api.connected(id) || (s.subs[id] || []).length >= s.settings.perPlayer);
+        // Need every CONNECTED player (host included) to have submitted all songs.
+        const ready = s.players.every((id) =>
+          !(id === HOST_SEAT || api.connected(id)) || (s.subs[id] || []).length >= s.settings.perPlayer);
         const items = [];
         s.players.forEach((id) => (s.subs[id] || []).forEach((tr) => items.push({ owner: id, track: tr })));
         if (ready && items.length >= 1) {
