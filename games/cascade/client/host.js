@@ -49,15 +49,16 @@
     }
     if (!p || p.phase !== "playing" || s.phase !== "playing") return; // SFX only play-to-play
     const topChanged = s.top && p.top && s.top.id !== p.top.id;
+    // { duck:false } -> the SFX play OVER the music WITHOUT lowering it (Cascade).
     // Every posed card gets the "card drop" sound (you have no separate attack
     // sound yet; when you add attaque.mp3 I can give +2/+4 their own sting).
-    if (topChanged) Sound.sfx("carte");
+    if (topChanged) Sound.sfx("carte", { duck: false });
     else {
       const sum = (arr) => arr.reduce((t, x) => t + x.count, 0);
-      if (sum(s.players) > sum(p.players)) Sound.sfx("pioche");
+      if (sum(s.players) > sum(p.players)) Sound.sfx("pioche", { duck: false });
     }
     const said = (arr) => arr.filter((x) => x.said && x.count === 1).map((x) => x.id).sort().join(",");
-    if (said(s.players) && said(s.players) !== said(p.players)) Sound.sfx("uno");
+    if (said(s.players) && said(s.players) !== said(p.players)) Sound.sfx("uno", { duck: false });
   }
 
   // Load this game's declared cheats so we can show the host cheat bar.
@@ -205,8 +206,11 @@
     // discard: rebuild only when the top card actually changes
     const disc = stage.querySelector("[data-disc]");
     if (disc && disc.dataset.top !== (s.top && s.top.id)) {
+      const firstBuild = !disc.dataset.top;
       disc.innerHTML = unoCardHtml(s.top);
       disc.dataset.top = s.top && s.top.id;
+      // Animate the played card flying from the player's pod to the centre pile.
+      if (!firstBuild && s.lastAction) flyToPile(stage, s);
     }
     const color = stage.querySelector("[data-color]");
     if (color) color.innerHTML = unoDot(s.activeColor) + " " + (UNO_COLOR_NAMES[s.activeColor] || "—");
@@ -236,6 +240,27 @@
       else if (s.lastAction && s.lastAction.name === p.name) a = lastActionLabel(s.lastAction);
       if (act.dataset.v !== a) { act.innerHTML = a; act.dataset.v = a; }
     });
+  }
+
+  // A temporary card that slides from the acting player's pod to the discard.
+  function flyToPile(stage, s) {
+    const pod = [...stage.querySelectorAll(".cscd-pod")].find((p) => {
+      const n = p.querySelector("[data-nm]"); return n && n.textContent === s.lastAction.name;
+    });
+    const disc = stage.querySelector("[data-disc]");
+    if (!pod || !disc || !s.top) return;
+    const from = pod.getBoundingClientRect(), to = disc.getBoundingClientRect();
+    const sx = from.left + from.width / 2, sy = from.top + from.height / 2;
+    const ex = to.left + to.width / 2, ey = to.top + to.height / 2;
+    const fly = document.createElement("div");
+    fly.className = "cscd-fly";
+    fly.innerHTML = unoCardHtml(s.top);
+    fly.style.left = sx + "px"; fly.style.top = sy + "px";
+    fly.style.transform = "translate(-50%,-50%) scale(.55)";
+    document.body.appendChild(fly);
+    void fly.offsetWidth; // reflow so the transition actually runs
+    fly.style.transform = `translate(-50%,-50%) translate(${ex - sx}px,${ey - sy}px) scale(1)`;
+    setTimeout(() => fly.remove(), 460);
   }
 
   function fanHtml(count) {

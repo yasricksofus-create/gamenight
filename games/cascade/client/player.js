@@ -10,11 +10,46 @@
   let you = { yourTurn: false, awaiting: null }; // cascade:you
   let myVote = {};       // my local settings choices
   let flushSel = [];     // card ids selected during a flush
+  let displayIds = new Set(); // which of my cards are currently SHOWN in the hand
+  let revealQ = [];      // cards drawn, waiting to be revealed one by one
+  let revealing = false;
   unoInjectStyles();
 
   socket.on("cascade:state", (s) => { state = s; if (s.phase !== "playing") flushSel = []; render(); });
-  socket.on("cascade:hand", (d) => { hand = d.hand || []; render(); });
+  socket.on("cascade:hand", (d) => {
+    const newHand = d.hand || [];
+    const newIds = newHand.map((c) => c.id);
+    const playing = state && state.phase === "playing";
+    // A DEAL (or reconnect) replaces the whole hand -> show it all at once.
+    // A DRAW keeps the existing cards and adds new ones -> reveal the new ones.
+    const sharesAny = newIds.some((id) => displayIds.has(id));
+    hand = newHand;
+    if (!sharesAny || !playing) { displayIds = new Set(newIds); render(); return; }
+    // keep only cards still in hand, then queue the freshly added ones
+    displayIds = new Set([...displayIds].filter((id) => newIds.includes(id)));
+    const queued = new Set(revealQ.map((c) => c.id));
+    const added = newHand.filter((c) => !displayIds.has(c.id) && !queued.has(c.id));
+    if (added.length) { revealQ.push(...added); if (!revealing) runReveal(); }
+    render();
+  });
   socket.on("cascade:you", (d) => { you = d || { yourTurn: false, awaiting: null }; render(); });
+
+  // Reveal each drawn card BIG at the centre, then let it drop into the hand.
+  function runReveal() {
+    if (!revealQ.length) { revealing = false; return; }
+    revealing = true;
+    const c = revealQ.shift();
+    const ov = document.createElement("div");
+    ov.className = "cscd-draw";
+    ov.innerHTML = unoCardHtml(c);
+    document.body.appendChild(ov);
+    requestAnimationFrame(() => ov.classList.add("in"));
+    setTimeout(() => {
+      ov.classList.remove("in"); ov.classList.add("out");
+      displayIds.add(c.id); render(); // the card now appears in the hand
+      setTimeout(() => { ov.remove(); runReveal(); }, 260);
+    }, 560);
+  }
 
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
   const me = () => window.mySeatId;
@@ -44,7 +79,7 @@
     return ["play", s.top && s.top.id, s.activeColor, s.pendingDraw, s.turn,
       you.yourTurn, JSON.stringify(you.awaiting), s.rules && s.rules.jumpin ? 1 : 0,
       s.players.map((p) => p.id + ":" + p.count + ":" + (p.said ? 1 : 0)).join(","),
-      hand.map((c) => c.id).join(","), "fs:" + flushSel.join(",")].join("|");
+      hand.map((c) => c.id).join(","), "fs:" + flushSel.join(","), "d:" + displayIds.size].join("|");
   }
 
   const RULES = [
@@ -131,9 +166,11 @@
 
   // ---------- hand ----------
   function handHtml(s, aw) {
-    if (!hand.length) return `<p class="uno-sub" style="text-align:center">Main vide.</p>`;
+    // Only cards already "revealed" are shown (drawn cards appear one by one).
+    const shown = hand.filter((c) => displayIds.has(c.id));
+    if (!shown.length) return `<p class="uno-sub" style="text-align:center">Main vide.</p>`;
     const flushMode = aw && aw.type === "flush";
-    const cards = hand.map((c) => {
+    const cards = shown.map((c) => {
       let ok, selected = false;
       if (flushMode) { ok = true; selected = flushSel.includes(c.id); }
       else if (aw && aw.type === "stack-or-take") ok = c.kind === aw.ptype;

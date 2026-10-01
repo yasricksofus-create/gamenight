@@ -240,6 +240,15 @@ window.unoInjectStyles = function () {
   .cscd-pod.off{opacity:.42;}
   .cscd-uno{color:#FFD54A;font-weight:900;}
   .cscd-cheatwrap{position:absolute;left:0;right:0;bottom:10px;z-index:5;}
+  /* a card flying from a pod to the centre pile (host) */
+  .cscd-fly{position:fixed;z-index:80;pointer-events:none;
+    transition:transform .42s cubic-bezier(.2,.7,.25,1);}
+  /* drawn-card reveal on the player's phone (big at centre, then down to the hand) */
+  .cscd-draw{position:fixed;inset:0;z-index:90;display:flex;align-items:center;justify-content:center;pointer-events:none;}
+  .cscd-draw .uno-card{transform:scale(.4);opacity:0;
+    transition:transform .28s cubic-bezier(.2,.9,.3,1.25),opacity .2s;}
+  .cscd-draw.in .uno-card{transform:scale(1.75);opacity:1;}
+  .cscd-draw.out .uno-card{transform:scale(.5) translateY(130px);opacity:0;}
   `;
   document.head.appendChild(st);
 };

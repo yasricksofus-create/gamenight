@@ -61,6 +61,59 @@ app.get("/api/games/:id", (req, res) => {
   res.json(game);
 });
 
+// ----- Generic music search service (used by music games like Kietkoutsa) -----
+// Proxies Deezer's public search so the browser never hits CORS and NO API key is
+// needed. Returns a trimmed list: id, title, artist, cover, preview (30s mp3).
+// Engine-level and game-agnostic: any future music game can reuse it.
+app.get("/api/music/search", async (req, res) => {
+  const q = (req.query.q || "").toString().trim().slice(0, 100);
+  if (!q || typeof fetch !== "function") return res.json({ results: [] });
+  try {
+    const r = await fetch("https://api.deezer.com/search?limit=12&q=" + encodeURIComponent(q));
+    const j = await r.json();
+    const results = (j.data || []).filter((t) => t && t.preview).map((t) => ({
+      id: String(t.id),
+      title: t.title,
+      artist: (t.artist && t.artist.name) || "",
+      cover: (t.album && (t.album.cover_medium || t.album.cover)) || "",
+      preview: t.preview,
+    }));
+    res.json({ results });
+  } catch (e) {
+    res.json({ results: [] });
+  }
+});
+
+// ----- Read the collected feedback (protected page) -----
+// Open  /admin/feedback?key=YOUR_KEY  in a browser to read every retour.
+// The key is "gamenight" unless you set FEEDBACK_KEY in Render's Environment.
+// NOTE: the file lives on Render's disk, which is WIPED on every redeploy -> read
+// it before pushing an update if you want to keep older retours.
+const FEEDBACK_KEY = process.env.FEEDBACK_KEY || "gamenight";
+function escHtml(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+app.get("/admin/feedback", (req, res) => {
+  if ((req.query.key || "") !== FEEDBACK_KEY) {
+    return res.status(403).send("Acces refuse. Ajoute  ?key=TON_MOT_DE_PASSE  a l'URL.");
+  }
+  let raw = "";
+  try { raw = fs.readFileSync(path.join(__dirname, "feedback.log"), "utf8"); } catch (e) {}
+  const lines = raw.split("\n").filter(Boolean).reverse(); // newest first
+  const items = lines.map((l) => `<li>${escHtml(l)}</li>`).join("") ||
+    "<li><em>Aucun retour pour l'instant.</em></li>";
+  res.send(`<!doctype html><html lang="fr"><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Retours — Game Night</title>
+    <style>body{font:15px/1.55 system-ui,sans-serif;margin:0;background:#0f172a;color:#e5edff;padding:24px;}
+    h1{font-size:1.4rem;margin:0 0 4px;}.note{opacity:.7;font-size:.85rem;margin:0 0 18px;max-width:900px;}
+    ul{list-style:none;padding:0;max-width:900px;margin:0;}
+    li{background:#1a2340;border:1px solid #2b365e;border-radius:10px;padding:10px 14px;margin:8px 0;word-break:break-word;}</style>
+    </head><body><h1>📝 Retours des joueurs (${lines.length})</h1>
+    <p class="note">Du plus récent au plus ancien. ⚠️ Cette liste est remise à zéro à chaque redéploiement du serveur (chaque mise en ligne) — relis-la avant de pousser une mise à jour si tu veux garder les anciens.</p>
+    <ul>${items}</ul></body></html>`);
+});
+
 // ----- Rooms state (in memory) -----
 // rooms[CODE] = { code, gameId, hostToken, hostSocketId, hostGrace,
 //                 players: [{ seatId, name, socketId, connected, grace }],
@@ -234,6 +287,22 @@ io.on("connection", (socket) => {
     module.start(makeApi(room), room);
     io.to(room.code).emit("game:started", { gameId: room.gameId });
     console.log(`[room ${room.code}] game "${room.gameId}" started`);
+  });
+
+  // ---------- HOST: add a BOT (dev/solo testing) ----------
+  // A bot is a seat with no socket: connected:true so it counts as a player, and
+  // isBot:true so a game module can drive it (submit/vote automatically). Lobby
+  // only. Behaviour is per-game; today only Kietkoutsa makes bots act.
+  socket.on("host:addBot", () => {
+    const room = rooms[socket.data.code];
+    if (!room || socket.data.role !== "host" || room.gameState) return;
+    if (room.players.length >= 10) return;
+    const n = room.players.filter((p) => p.isBot).length + 1;
+    let name = "Bot " + n;
+    while (room.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) name += "*";
+    room.players.push({ seatId: token(), name, socketId: null, connected: true, grace: null, isBot: true });
+    broadcastPlayers(room);
+    console.log(`[room ${room.code}] bot added (${room.players.length})`);
   });
 
   // ---------- HOST: cheat ----------
