@@ -11,6 +11,8 @@ window.socket = socket;
 const params = new URLSearchParams(window.location.search);
 const gameId = params.get("game");
 const roomParam = (params.get("room") || "").toUpperCase();
+const DEV = params.has("dev"); // captured now: the URL is rewritten after room creation
+let devMode = DEV;             // can also be turned on live with Ctrl+Shift+B
 
 const loadingEl = document.getElementById("loading");
 const lobbyEl = document.getElementById("lobby");
@@ -44,7 +46,32 @@ function setupLobby(code, game) {
   const startBtn = document.getElementById("start-btn");
   startBtn.classList.remove("hidden");
   document.getElementById("start-hint").textContent = "Lance quand tous les joueurs ont rejoint.";
+  showBotButton();
 }
+
+// Dev/solo testing. Two ways in: open with ?dev=1, OR press Ctrl+Shift+B while in
+// the lobby to reveal the "Add a bot" button (more reliable than the URL).
+// Ctrl+Shift+F opens the feedback page. Both only matter to you, the host.
+function showBotButton() {
+  if (!devMode) return;
+  const startBtn = document.getElementById("start-btn");
+  if (!startBtn || document.getElementById("addbot-btn")) return;
+  const b = document.createElement("button");
+  b.id = "addbot-btn"; b.className = "start-btn"; b.style.marginTop = "8px";
+  b.textContent = "🤖 Ajouter un bot (dev)";
+  b.addEventListener("click", () => socket.emit("host:addBot"));
+  startBtn.insertAdjacentElement("afterend", b);
+}
+window.addEventListener("keydown", (e) => {
+  if (!e.ctrlKey || !e.shiftKey) return;
+  const k = e.key.toLowerCase();
+  if (k === "b") { e.preventDefault(); devMode = true; showBotButton(); }
+  else if (k === "f") {
+    e.preventDefault();
+    const key = prompt("Cle feedback :", "gamenight");
+    if (key) window.open("/admin/feedback?key=" + encodeURIComponent(key), "_blank");
+  }
+});
 
 function showLobby() {
   loadingEl.classList.add("hidden");

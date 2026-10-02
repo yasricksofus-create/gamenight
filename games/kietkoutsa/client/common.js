@@ -56,7 +56,9 @@
     st.textContent = `
     :root{--kkt-mag:#ff2fb0;--kkt-cyan:#22e0ff;--kkt-pur:#9b5cff;--kkt-ink:#07060f;}
     /* animated neon background */
-    #kkt-bg{position:fixed;inset:0;z-index:0;overflow:hidden;background:
+    /* let the neon background show from BEHIND the page content */
+    body.room{background:transparent;}
+    #kkt-bg{position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden;background:
       radial-gradient(circle at 20% 10%, #2a0b45 0%, rgba(42,11,69,0) 45%),
       radial-gradient(circle at 85% 20%, #06303f 0%, rgba(6,48,63,0) 40%),
       linear-gradient(160deg,#0a0618 0%,#07060f 60%,#0b0520 100%);}

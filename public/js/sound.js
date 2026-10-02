@@ -32,6 +32,11 @@ window.Sound = (function () {
     if (!isNaN(v)) master = clamp(v);
   } catch (e) {}
   function clamp(v) { return Math.max(0, Math.min(1, v)); }
+  // Raw <audio> elements (e.g. a game's streamed music) that should follow the
+  // master volume slider even though they aren't registered as Sound tracks.
+  const externals = new Set();
+  function attachExternal(a) { if (a) { externals.add(a); try { a.volume = master; } catch (e) {} } return a; }
+  function detachExternal(a) { externals.delete(a); }
   function getMaster() { return master; }
   function setMaster(v) {
     master = clamp(v);
@@ -41,6 +46,7 @@ window.Sound = (function () {
       const a = r.current;
       if (a && !a.paused) { clearInterval(a._fade); a.volume = level(r); }
     });
+    externals.forEach((a) => { try { a.volume = master; } catch (e) {} });
   }
   function level(r) { return r.volume * master; } // effective volume of a track
 
@@ -65,7 +71,9 @@ window.Sound = (function () {
       audios: list.map((u) => {
         const a = new Audio(u);
         a.preload = opts.preload || "auto"; // "none" = load only when played (big music)
-        a.loop = !!opts.loop;
+        // Single-track music loops itself; multi-track music ALTERNATES instead
+        // (each track chains to a different one when it ends -- see music()).
+        a.loop = !!opts.loop && list.length === 1;
         return a;
       }),
     };
@@ -147,30 +155,49 @@ window.Sound = (function () {
         a.play().catch(() => {});
         fadeTo(a, level(r), MUSIC_FADE);
       } catch (e) {}
+      // Multi-track music: when this track ends, chain to a DIFFERENT one.
+      if (r.loop && r.audios.length > 1) a.onended = () => chainNext(key);
     };
     unlocked ? run() : pending.push(run);
   }
 
+  // Play the next music variant of `key` (used to alternate the in-game tracks).
+  function chainNext(key) {
+    const r = reg[key];
+    if (!r || currentMusic !== key) return; // another music took over -> stop
+    const a = r.audios[pickIndex(r)]; // pickIndex never repeats the last one
+    r.current = a;
+    try {
+      a.currentTime = 0; a.volume = 0; a.play().catch(() => {});
+      fadeTo(a, level(r), MUSIC_FADE);
+    } catch (e) {}
+    a.onended = () => chainNext(key);
+  }
+
   // ----- SFX: plays over the music, which ducks 2s down / 2s up -----
-  function sfx(key) {
+  // sfx(key, { duck: false }) plays the effect OVER the music without lowering it.
+  // Default (duck true) ducks the music 2s down / 2s up (used by Undercover).
+  function sfx(key, opts) {
     const r = reg[key];
     if (!r) return;
+    const duck = !opts || opts.duck !== false;
     const run = () => {
-      const m = currentMusic ? reg[currentMusic] : null;
-      const ma = m && m.current && !m.current.paused ? m.current : null;
       const a = r.audios[pickIndex(r)];
       r.current = a;
-
       const playEffect = () => {
         try { a.currentTime = 0; a.volume = level(r); a.play().catch(() => {}); } catch (e) {}
-        const bringBack = () => { if (ma && !ma.paused) fadeTo(ma, level(m), DUCK_MS); };
-        a.onended = bringBack;                       // ramp music back up when done
-        clearTimeout(a._upT);
-        a._upT = setTimeout(bringBack, 8000);        // safety net if 'ended' never fires
       };
-
-      if (ma) fadeTo(ma, level(m) * DUCK_RATIO, DUCK_MS, playEffect); // 2s down, THEN effect
-      else playEffect();
+      if (!duck) return playEffect(); // Cascade: keep the music at full volume
+      const m = currentMusic ? reg[currentMusic] : null;
+      const ma = m && m.current && !m.current.paused ? m.current : null;
+      if (!ma) return playEffect();
+      fadeTo(ma, level(m) * DUCK_RATIO, DUCK_MS, () => {  // 2s down, THEN effect
+        playEffect();
+        const bringBack = () => { if (ma && !ma.paused) fadeTo(ma, level(m), DUCK_MS); };
+        a.onended = bringBack;
+        clearTimeout(a._upT);
+        a._upT = setTimeout(bringBack, 8000);
+      });
     };
     unlocked ? run() : pending.push(run);
   }
@@ -182,5 +209,5 @@ window.Sound = (function () {
     r.audios.forEach((a) => { try { clearInterval(a._fade); a.pause(); a.currentTime = 0; } catch (e) {} });
   }
 
-  return { register, registerAuto, music, sfx, stop, setMaster, getMaster };
+  return { register, registerAuto, music, sfx, stop, setMaster, getMaster, attachExternal, detachExternal };
 })();
