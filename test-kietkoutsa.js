@@ -435,6 +435,24 @@ function ownerOfRound(t, part) { return t.s().round.parts[part || 0].owner; }
     assert.strictEqual(t.s().phase, "reveal");
   });
 
+  await test("votes are grouped into one send; unchanged private info is not re-sent", async () => {
+    const t = setup(["A", "B", "C", "D"]);
+    t.act(t.H, "beginSubmit"); submitAll(t, 4);
+    t.act(t.H, "startRounds");
+    const before = t.log.all.filter(([e]) => e === "kkt:state").length;
+    const o = ownerOfRound(t);
+    ["p0", "p1", "p2", "p3"].filter((x) => x !== o).forEach((id) => t.act({ seatId: id }, "vote", { target: o }));
+    assert.strictEqual(t.log.all.filter(([e]) => e === "kkt:state").length, before, "nothing sent yet (batched)");
+    await wait(160);
+    assert.strictEqual(t.log.all.filter(([e]) => e === "kkt:state").length, before + 1, "exactly one grouped send");
+    // the owner's private info did not change -> not re-sent
+    const youCount = (t.log.player[o] || []).filter(([e]) => e === "kkt:you").length;
+    t.act({ seatId: ["p0", "p1", "p2", "p3"].find((x) => x !== o) }, "setBet", { bet: 1 });
+    await wait(160);
+    assert.strictEqual((t.log.player[o] || []).filter(([e]) => e === "kkt:you").length, youCount);
+    K.onCheat(t.api, t.room, "skip-track");
+  });
+
   await test("host name + avatar choice", async () => {
     const t = setup(["A", "B"]);
     t.act(t.H, "setHostName", { name: "Diddy" });

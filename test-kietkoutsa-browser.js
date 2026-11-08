@@ -21,22 +21,34 @@ function wav(seconds, freq) {
   for (let i = 0; i < n; i++) buf.writeInt16LE(Math.round(Math.sin((2 * Math.PI * freq * i) / rate) * 8000 * (1 + Math.sin(i / 900)) / 2), 44 + i * 2);
   return buf;
 }
-const TONE = wav(6, 440);
+const TONE = wav(20, 440);
 let N = 0;
 const fakeTrack = (q) => {
   const id = ++N;
   return { id, title: q + " hit " + id, preview: "https://cdnt-preview.dzcdn.net/api/1/1/a/b/c/0/" + id + ".mp3", link: "https://www.deezer.com/track/" + id,
     explicit_lyrics: id % 5 === 0, artist: { name: "Artiste " + (id % 4) }, album: { cover_medium: "https://e-cdns-images.dzcdn.net/images/cover/" + id + "/250x250.jpg" } };
 };
-global.fetch = async (url) => {
+const realFetch = global.fetch;
+global.fetch = async (url, opts) => {
   url = String(url);
+  if (url.startsWith("http://localhost")) return realFetch(url, opts); // our own server
+  const range = opts && opts.headers && opts.headers.Range;
   if (url.includes("api.deezer.com/search")) {
     const q = decodeURIComponent((url.match(/q=([^&]*)/) || [])[1] || "x");
     return new Response(JSON.stringify({ data: [fakeTrack(q), fakeTrack(q), fakeTrack(q), fakeTrack(q)] }));
   }
   if (url.includes("api.deezer.com/chart")) return new Response(JSON.stringify({ data: [fakeTrack("Top"), fakeTrack("Top")] }));
   if (url.includes("api.deezer.com/track/")) return new Response(JSON.stringify({ error: {} }));
-  if (url.includes("dzcdn.net")) return new Response(TONE, { headers: { "content-type": "audio/wav", "content-length": String(TONE.length) } });
+  if (url.includes("dzcdn.net")) {
+    // behaves like a real CDN: honours "Range" (partial download -> 206)
+    const m = range && /bytes=(\d+)-(\d*)/.exec(range);
+    if (m) {
+      const a = +m[1], b = m[2] ? Math.min(+m[2], TONE.length - 1) : TONE.length - 1;
+      return new Response(TONE.subarray(a, b + 1), { status: 206, headers: { "content-type": "audio/wav", "content-length": String(b - a + 1),
+        "content-range": `bytes ${a}-${b}/${TONE.length}`, "accept-ranges": "bytes" } });
+    }
+    return new Response(TONE, { headers: { "content-type": "audio/wav", "content-length": String(TONE.length), "accept-ranges": "bytes" } });
+  }
   throw new Error("blocked in test: " + url);
 };
 
@@ -49,6 +61,14 @@ const BASE = "http://localhost:" + process.env.PORT;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
+  // ----- engine HTTP checks: compression, cache headers, Range on the proxy -----
+  await wait(300);
+  const js = await fetch(BASE + "/games/kietkoutsa/client/common.js", { headers: { "accept-encoding": "gzip" } });
+  console.log("gzip:", js.headers.get("content-encoding"), "| js cache:", js.headers.get("cache-control"));
+  const mp3 = await fetch(BASE + "/sounds/README.txt");
+  const pv = await fetch(BASE + "/api/music/preview?u=" + encodeURIComponent("https://cdnt-preview.dzcdn.net/x.mp3"), { headers: { range: "bytes=1000-1999" } });
+  console.log("proxy range:", pv.status, pv.headers.get("content-range"), (await pv.arrayBuffer()).byteLength + " bytes");
+  if (pv.status !== 206 || js.headers.get("content-encoding") !== "gzip") throw new Error("engine HTTP checks failed");
   const browser = await chromium.launch({ args: ["--autoplay-policy=no-user-gesture-required"] });
   const errors = [];
   const watch = (page, who) => {
@@ -123,6 +143,14 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await late.goto(`${BASE}/player.html?room=${code}&name=Max`);
   await late.waitForSelector("#game-root:not(.hidden) #kkt-vp", { timeout: 8000 });
   console.log("late player joined mid-game: OK");
+  // reload the HOST mid-round: the music must resume at the right second
+  await wait(2500);
+  await host.reload();
+  await host.waitForSelector("#kkt-p-players", { timeout: 10000 });
+  await wait(2500);
+  const st = await host.evaluate(() => ({ playing: kktAudio.playing, time: kktAudio.time }));
+  console.log("host reload mid-round -> playing:", st.playing, "| resumed at", st.time.toFixed(1) + "s");
+  if (!st.playing || st.time < 3) throw new Error("music did not resume at the right second");
   // reload one phone mid-round (reconnection)
   await phones[2].p.reload();
   await phones[2].p.waitForSelector("#kkt-vp .kkt-vb", { timeout: 8000 });

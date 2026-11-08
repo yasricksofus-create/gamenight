@@ -33,7 +33,11 @@
 
   fetch("/api/games/kietkoutsa").then((r) => r.json()).then((g) => { cheats = g.cheats || []; buildChrome(); }).catch(() => {});
 
+  // Static data (modes, avatar choices) arrives once; merged into every state.
+  let STATIC = {};
+  socket.on("kkt:static", (d) => { STATIC = d || {}; if (state) { state = Object.assign({}, STATIC, state); render(); } });
   socket.on("kkt:state", (s) => {
+    s = Object.assign({}, STATIC, s);
     if (s.phase !== prevPhase) {
       phaseSound(s.phase);
       if (s.phase !== "playing") { kktAudio.stop(); audioKey = null; }
@@ -228,7 +232,7 @@
     }
     const st = s.settings;
     const tallyN = Object.values(s.modeTally || {}).reduce((a, b) => a + b, 0);
-    kktPatch("kkt-modes", `<div class="kkt-modes">` + Object.keys(s.modes).map((id) => {
+    kktPatch("kkt-modes", `<div class="kkt-modes">` + Object.keys(s.modes || {}).map((id) => {
       const m = s.modes[id], n = (s.modeTally || {})[id];
       return `<button class="kkt-mode ${st.mode === id ? "on" : ""}" data-mode="${id}">${n ? `<span class="tally">${n} 🗳️</span>` : ""}
         <span class="e">${m.emoji}</span><span class="n">${kktEsc(m.label)}</span><span class="r">${kktEsc(m.rule)}</span></button>`;
@@ -255,7 +259,7 @@
     kktPatch("kkt-set-host", kktSwitch("hostPlays", st.hostPlays, "🖥️ Le host joue aussi (depuis cet ecran)",
       "Tes choix passent par un panneau secret. Le mieux : joue depuis ton telephone et laisse cet ecran en mode TV."));
     const hostP = (s.players || []).find((p) => p.id === ME);
-    kktPatch("kkt-host-av", st.hostPlays && hostP ? `<p class="kkt-small">Ton avatar :</p>` + kktAvatarPicker(hostP.avatar, s.emojis, s.colors) : "");
+    kktPatch("kkt-host-av", st.hostPlays && hostP ? `<p class="kkt-small">Ton avatar :</p>` + kktAvatarPicker(hostP.avatar, s.emojis || [], s.colors || []) : "");
     if (hostP) you = Object.assign({}, you || {}, { avatar: hostP.avatar });
     kktPatch("kkt-plist", playerChips(s.players || [], () => ({ txt: "pret(e)" })) || `<p class="kkt-sub">Aucun joueur…</p>`);
     const n = (s.players || []).length;

@@ -52,10 +52,25 @@ const PORT = process.env.PORT || 3000;
 // How long a seat (or the host slot) is kept after a disconnect, in ms.
 const GRACE_MS = Number(process.env.GRACE_MS) || 90000;
 
-app.use(express.static(path.join(__dirname, "public")));
+// Compress everything the server sends (HTML, JS, CSS, JSON): files get ~3-4x
+// lighter, so pages load faster on phones. Audio/images are skipped (already
+// compressed formats).
+app.use(require("compression")());
+
+// Browser cache. Images, sounds and fonts rarely change: the browser keeps them
+// 1 day. Code and pages (html/js/css) are always re-checked, but answered with a
+// tiny "not modified" when unchanged, so an update on Render is seen at once.
+function cacheHeaders(res, filePath) {
+  if (/\.(png|jpe?g|gif|webp|svg|ico|mp3|wav|ogg|m4a|woff2?|ttf)$/i.test(filePath)) {
+    res.setHeader("Cache-Control", "public, max-age=86400");
+  } else {
+    res.setHeader("Cache-Control", "no-cache");
+  }
+}
+app.use(express.static(path.join(__dirname, "public"), { setHeaders: cacheHeaders }));
 // Each game's browser code lives in its own folder (games/<id>/client/*.js) and
 // is loaded on demand by the active game only (see public/js/game-loader.js).
-app.use("/games", express.static(path.join(__dirname, "games")));
+app.use("/games", express.static(path.join(__dirname, "games"), { setHeaders: cacheHeaders }));
 
 app.get("/api/games", (req, res) => res.json(games));
 app.get("/api/games/:id", (req, res) => {

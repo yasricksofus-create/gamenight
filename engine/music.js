@@ -193,12 +193,22 @@ function mount(app) {
     const u = String(req.query.u || "");
     if (!isAllowedUrl(u) || typeof fetch !== "function") return res.status(400).end();
     try {
-      const r = await fetch(u);
+      // "Range" = "send me only the bytes from X to Y". The browser asks for it
+      // when it jumps to a precise second (e.g. the host screen reloads mid-round
+      // and must resume at 0:12). We pass it on to Deezer/Apple and send back
+      // their partial answer (HTTP 206), so seeking works through the proxy.
+      const headers = {};
+      if (req.headers.range) headers.Range = req.headers.range;
+      const r = await fetch(u, { headers });
       if (!r.ok || !r.body) return res.status(502).end();
+      res.status(r.status === 206 ? 206 : 200);
       res.setHeader("Content-Type", r.headers.get("content-type") || "audio/mpeg");
       res.setHeader("Cache-Control", "public, max-age=600");
+      res.setHeader("Accept-Ranges", r.headers.get("accept-ranges") || "bytes");
       const len = r.headers.get("content-length");
       if (len) res.setHeader("Content-Length", len);
+      const range = r.headers.get("content-range");
+      if (range) res.setHeader("Content-Range", range);
       let sent = 0;
       const MAX = 4 * 1024 * 1024; // 4 MB is far above any 30s preview
       const stream = Readable.fromWeb(r.body);

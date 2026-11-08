@@ -126,6 +126,7 @@
       },
       stop() { clear(); segs = []; Object.values(els).forEach((a) => { try { a.pause(); } catch (e) {} }); if (window.kktViz) kktViz.idle(); },
       get playing() { return !!(current && !current.paused); },
+      get time() { return current ? current.currentTime : 0; }, // seconds into the excerpt
     };
   })();
 

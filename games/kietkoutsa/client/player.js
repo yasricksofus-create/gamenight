@@ -12,7 +12,11 @@
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
   setInterval(kktTick, 250);
 
+  // Static data (modes, avatar choices) arrives once; merged into every state.
+  let STATIC = {};
+  socket.on("kkt:static", (d) => { STATIC = d || {}; if (state) { state = Object.assign({}, STATIC, state); render(); } });
   socket.on("kkt:state", (s) => {
+    s = Object.assign({}, STATIC, s);
     if (s.phase !== prevPhase) { if (s.phase !== "playing") { kktAudio.stop(); audioKey = null; } prevPhase = s.phase; }
     state = s; render();
   });
@@ -69,8 +73,8 @@
       <div class="kkt-card"><h2 class="kkt-h2" style="margin-top:0">Reglages du host</h2><div id="kkt-sum"></div></div>
       <p class="kkt-sub">Prepare tes meilleurs sons ! 🎧</p></div></div>`);
     kktPatch("kkt-me-av", `<div class="kkt-row">${kktAvatar(you.avatar, 54)} <b>${kktEsc(you.name)}</b></div>`);
-    kktPatch("kkt-av", kktAvatarPicker(you.avatar, s.emojis, s.colors));
-    kktPatch("kkt-modes", `<div class="kkt-modes">` + Object.keys(s.modes).map((id) => {
+    kktPatch("kkt-av", kktAvatarPicker(you.avatar, s.emojis || [], s.colors || []));
+    kktPatch("kkt-modes", `<div class="kkt-modes">` + Object.keys(s.modes || {}).map((id) => {
       const m = s.modes[id], n = (s.modeTally || {})[id];
       return `<button class="kkt-mode ${you.modeVote === id ? "on" : ""}" data-mode="${id}">${n ? `<span class="tally">${n}</span>` : ""}
         <span class="e">${m.emoji}</span><span class="n">${kktEsc(m.label)}${s.settings.mode === id ? " (choisi)" : ""}</span><span class="r">${kktEsc(m.rule)}</span></button>`;

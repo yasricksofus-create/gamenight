@@ -391,7 +391,7 @@ function afterVote(api, room) {
       if (target < s.endsAt) { s.endsAt = target; scheduleRoundTimers(api, room); }
     }
   }
-  broadcast(api, room);
+  broadcastSoon(api, room);
 }
 
 function rate(s, track, voter, v) {
@@ -649,9 +649,31 @@ function pubTrack(s, t) {
     : { title: t.title, artist: t.artist, cover: t.cover, preview: t.preview, hidden: false };
 }
 
-function broadcast(api, room) {
+// Static data (mode list, avatar choices) never changes: sent once per arrival
+// instead of in every state message.
+function sendStatic(api) {
+  api.toAll("kkt:static", { modes: D.MODES, emojis: D.AV_EMOJIS, colors: D.AV_COLORS });
+}
+
+// Small, frequent changes (a vote, a bet, a rating...) are GROUPED: one send
+// at most every 120 ms instead of one per click. Phase changes still go out
+// immediately through broadcast().
+const BATCH_MS = 120;
+function broadcastSoon(api, room) {
+  const s = room.gameState;
+  if (!s || s.timers.batch) return;
+  s.timers.batch = setTimeout(() => {
+    if (room.gameState !== s) return;
+    s.timers.batch = null;
+    broadcast(api, room);
+  }, BATCH_MS);
+}
+
+// force = true re-sends everyone's private info even if unchanged (reconnections).
+function broadcast(api, room, force) {
   const s = room.gameState;
   if (!s) return;
+  if (s.timers.batch) { clearTimeout(s.timers.batch); s.timers.batch = null; } // this send covers it
   const base = {
     phase: s.phase, settings: s.settings, serverNow: Date.now(),
     mode: D.MODES[s.settings.mode], theme: s.themeText || null,
@@ -662,8 +684,7 @@ function broadcast(api, room) {
     const tally = {};
     Object.values(s.modeVotes).forEach((m) => (tally[m] = (tally[m] || 0) + 1));
     api.toAll("kkt:state", Object.assign(base, {
-      modes: D.MODES, modeTally: tally, hostName: s.names[HOST_SEAT] || s.hostName,
-      emojis: D.AV_EMOJIS, colors: D.AV_COLORS, phones: api.players().length,
+      modeTally: tally, hostName: s.names[HOST_SEAT] || s.hostName, phones: api.players().length,
       players: pubPlayers(api, s),
     }));
   } else if (s.phase === "submit") {
@@ -707,8 +728,16 @@ function broadcast(api, room) {
     }));
   }
 
-  // Private per-participant info (own picks, own vote, own jokers...).
-  active(s).forEach((id) => tell(api, id, "kkt:you", youOf(s, id)));
+  // Private per-participant info (own picks, own vote, own jokers...), sent only
+  // when it actually changed for that person.
+  s.lastYou = s.lastYou || {};
+  active(s).forEach((id) => {
+    const y = youOf(s, id);
+    const str = JSON.stringify(y);
+    if (!force && s.lastYou[id] === str) return;
+    s.lastYou[id] = str;
+    tell(api, id, "kkt:you", y);
+  });
 }
 
 function youOf(s, id) {
@@ -771,6 +800,7 @@ module.exports = {
   start(api, room) {
     clearTimers(room.gameState);
     room.gameState = newState(api, room, null, false);
+    sendStatic(api);
     broadcast(api, room);
   },
 
@@ -793,6 +823,7 @@ module.exports = {
         if (others.length) s.targets[seatId] = pick(others);
       }
     }
+    sendStatic(api);
     broadcast(api, room);
   },
 
@@ -809,13 +840,13 @@ module.exports = {
       const emoji = D.AV_EMOJIS.includes(payload.emoji) ? payload.emoji : s.avatars[me].emoji;
       const color = D.AV_COLORS.includes(payload.color) ? payload.color : s.avatars[me].color;
       s.avatars[me] = { emoji, color };
-      return broadcast(api, room);
+      return broadcastSoon(api, room);
     }
 
     // ----- settings -----
     if (s.phase === "settings") {
       if (type === "voteMode" && amIn && D.MODES[payload.mode]) {
-        s.modeVotes[me] = payload.mode; return broadcast(api, room);
+        s.modeVotes[me] = payload.mode; return broadcastSoon(api, room);
       }
       if (!host) return;
       if (type === "setSetting") {
@@ -884,7 +915,7 @@ module.exports = {
       if (type === "setNote" && amIn) {
         const t = (s.subs[me] || []).find((x) => x.id === payload.trackId);
         if (t) t.note = String(payload.note || "").trim().slice(0, 120);
-        return broadcast(api, room);
+        return broadcastSoon(api, room);
       }
       if (type === "setNature" && amIn && s.settings.mode === "truebluff") {
         const nat = payload.nature === "bluff" ? "bluff" : "sincere";
@@ -915,11 +946,11 @@ module.exports = {
         return afterVote(api, room);
       }
       if (type === "setBet" && s.settings.bets && !v.locked) {
-        v.bet = Math.max(1, Math.min(3, parseInt(payload.bet, 10) || 1)); return broadcast(api, room);
+        v.bet = Math.max(1, Math.min(3, parseInt(payload.bet, 10) || 1)); return broadcastSoon(api, room);
       }
       if (type === "lock" && voteComplete(s, v)) { v.locked = true; return broadcast(api, room); }
       if (type === "setNature" && s.settings.mode === "truebluff" && !v.locked) {
-        v.nature = payload.nature === "bluff" ? "bluff" : "sincere"; return broadcast(api, room);
+        v.nature = payload.nature === "bluff" ? "bluff" : "sincere"; return broadcastSoon(api, room);
       }
       if (type === "guess" && s.settings.blind) {
         if (r.parts[0].owner === me) return; // no guessing your own song (the guess is about excerpt 1)
@@ -955,7 +986,7 @@ module.exports = {
     if (s.phase === "reveal") {
       if (type === "rate" && amIn) {
         const part = s.result.parts[payload.part === 1 ? 1 : 0];
-        if (part && part.ownerId !== me) { rate(s, part.track, me, payload.v); broadcast(api, room); }
+        if (part && part.ownerId !== me) { rate(s, part.track, me, payload.v); broadcastSoon(api, room); }
         return;
       }
       if (host && type === "next") nextRound(api, room);
@@ -985,7 +1016,9 @@ module.exports = {
   },
 
   onReconnect(api, room) {
-    if (room.gameState) broadcast(api, room);
+    if (!room.gameState) return;
+    sendStatic(api);
+    broadcast(api, room, true);
   },
 
   // A player left for good: their FUTURE songs are removed from the queue; if
