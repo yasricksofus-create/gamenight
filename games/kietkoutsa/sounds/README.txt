@@ -5,3 +5,5 @@ Depose ici (noms exacts) :
   victoire.mp3  -> musique du classement final
 Variantes auto possibles : lobby2.mp3, lobby3.mp3 ... (jusqu'a 8).
 Pendant une manche, c'est l'extrait de la chanson qui joue (pas de musique de fond).
+
+Le roulement de tambour de la revelation est synthetise (pas de fichier a fournir).

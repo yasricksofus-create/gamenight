@@ -1,0 +1,4 @@
+# Not sent to GitHub (rebuilt / local only)
+node_modules/
+test-shots/
+.env
