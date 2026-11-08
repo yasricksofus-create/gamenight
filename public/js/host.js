@@ -43,6 +43,8 @@ function setupLobby(code, game) {
   document.getElementById("room-code").textContent = code;
   document.getElementById("site-url").textContent = window.location.host;
   renderCheatConsole(game);
+  if (window.JoinQR) JoinQR.draw(document.getElementById("join-qr"), code, 150);
+  if (window.Reactions) Reactions.enable(game, "host");
   const startBtn = document.getElementById("start-btn");
   startBtn.classList.remove("hidden");
   document.getElementById("start-hint").textContent = "Lance quand tous les joueurs ont rejoint.";

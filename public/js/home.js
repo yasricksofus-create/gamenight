@@ -44,9 +44,20 @@ joinForm.addEventListener("submit", (e) => {
     hint.textContent = "Choisis un pseudo.";
     return;
   }
+  try { localStorage.setItem("gn_last_name", name); } catch (e) {}
   // Go to the player page, which will actually connect to the room.
   window.location.href =
     `/player.html?room=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`;
 });
+
+// 3) Arriving from a QR code (/?room=ABCD): pre-fill the code, focus the name.
+(function prefillFromUrl() {
+  const room = (new URLSearchParams(location.search).get("room") || "").toUpperCase().slice(0, 4);
+  if (!room) return;
+  document.getElementById("join-code").value = room;
+  const nameInput = document.getElementById("join-name");
+  try { nameInput.value = localStorage.getItem("gn_last_name") || ""; } catch (e) {}
+  nameInput.focus();
+})();
 
 loadGames();

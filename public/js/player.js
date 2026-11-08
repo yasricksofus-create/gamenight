@@ -43,6 +43,7 @@ function setup(game, youName) {
   document.getElementById("game-name").textContent = game.name;
   document.getElementById("you-name").textContent = youName;
   document.getElementById("room-code").textContent = code;
+  if (window.Reactions) Reactions.enable(game, "player");
 }
 function showConnected() {
   loadingEl.classList.add("hidden");
@@ -56,10 +57,11 @@ function showGame() {
   document.getElementById("game-root").classList.remove("hidden");
 }
 
-socket.on("join:success", ({ game, you, seatId }) => {
+socket.on("join:success", ({ game, you, seatId, inGame }) => {
   remember(seatId);
   setup(game, you.name);
-  showConnected();
+  // inGame = we arrived while a game was already running (games that allow it)
+  if (inGame) showGame(); else showConnected();
 });
 
 socket.on("reconnect:success", ({ game, you, seatId, inGame }) => {

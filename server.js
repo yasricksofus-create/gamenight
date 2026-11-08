@@ -42,6 +42,9 @@ function recordFeedback(f) {
 }
 
 const app = express();
+// Render (and most hosts) sit behind a proxy: trust it so req.ip is the real
+// visitor IP (needed by the per-IP anti-abuse limiter of the music service).
+app.set("trust proxy", 1);
 const server = http.createServer(app);
 const io = new Server(server);
 
@@ -61,28 +64,11 @@ app.get("/api/games/:id", (req, res) => {
   res.json(game);
 });
 
-// ----- Generic music search service (used by music games like Kietkoutsa) -----
-// Proxies Deezer's public search so the browser never hits CORS and NO API key is
-// needed. Returns a trimmed list: id, title, artist, cover, preview (30s mp3).
-// Engine-level and game-agnostic: any future music game can reuse it.
-app.get("/api/music/search", async (req, res) => {
-  const q = (req.query.q || "").toString().trim().slice(0, 100);
-  if (!q || typeof fetch !== "function") return res.json({ results: [] });
-  try {
-    const r = await fetch("https://api.deezer.com/search?limit=12&q=" + encodeURIComponent(q));
-    const j = await r.json();
-    const results = (j.data || []).filter((t) => t && t.preview).map((t) => ({
-      id: String(t.id),
-      title: t.title,
-      artist: (t.artist && t.artist.name) || "",
-      cover: (t.album && (t.album.cover_medium || t.album.cover)) || "",
-      preview: t.preview,
-    }));
-    res.json({ results });
-  } catch (e) {
-    res.json({ results: [] });
-  }
-});
+// ----- Generic music service (used by music games like Kietkoutsa) -----
+// Search (Deezer + iTunes fallback), trending charts, and a safe preview proxy.
+// All the logic is in engine/music.js; it is game-agnostic and reusable.
+const music = require("./engine/music");
+music.mount(app);
 
 // ----- Read the collected feedback (protected page) -----
 // Open  /admin/feedback?key=YOUR_KEY  in a browser to read every retour.
@@ -120,6 +106,9 @@ app.get("/admin/feedback", (req, res) => {
 //                 gameState }
 const rooms = {};
 
+// The emojis allowed for live reactions (keep in sync with public/js/reactions.js).
+const REACTIONS = ["🔥", "😂", "😍", "🤯", "💀", "🤮", "👏", "🥱"];
+
 function token() { return crypto.randomBytes(9).toString("hex"); }
 
 function generateRoomCode() {
@@ -155,6 +144,9 @@ function makeApi(room) {
       if (p && p.connected && p.socketId) io.to(p.socketId).emit(event, data);
     },
     toAll: (event, data) => io.to(room.code).emit(event, data),
+    // Shared engine services a game may use (none of them know any game rules).
+    music,
+    now: () => Date.now(),
   };
 }
 
@@ -213,7 +205,13 @@ io.on("connection", (socket) => {
     const room = rooms[code];
     if (!room) return socket.emit("join:error", { message: "Ce code de salle n'existe pas." });
     if (!name) return socket.emit("join:error", { message: "Choisis un pseudo." });
-    if (room.gameState) return socket.emit("join:error", { message: "La partie a deja commence." });
+    // Joining a running game is refused, UNLESS the game module says it can
+    // welcome late players (module.allowLateJoin(room) returns true).
+    const module = gameModules[room.gameId];
+    const lateJoin = !!room.gameState;
+    if (lateJoin && !(module && typeof module.allowLateJoin === "function" && module.allowLateJoin(room))) {
+      return socket.emit("join:error", { message: "La partie a deja commence." });
+    }
     if (room.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) {
       return socket.emit("join:error", { message: "Ce pseudo est deja pris ici." });
     }
@@ -224,9 +222,11 @@ io.on("connection", (socket) => {
     socket.data = { role: "player", code, seatId: seat.seatId };
     socket.emit("join:success", {
       code, game: getGameById(room.gameId), you: { id: seat.seatId, name },
-      seatId: seat.seatId, inGame: false,
+      seatId: seat.seatId, inGame: lateJoin,
     });
     broadcastPlayers(room);
+    // Late arrival: let the game module seat this new player (it decides how).
+    if (lateJoin && module.onPlayerJoin) module.onPlayerJoin(makeApi(room), room, seat.seatId);
     console.log(`[room ${code}] "${name}" joined (${room.players.length})`);
   });
 
@@ -338,6 +338,30 @@ io.on("connection", (socket) => {
     if (!module || !module.onReconnect) return;
     const who = socket.data.role === "host" ? { isHost: true } : { seatId: socket.data.seatId };
     module.onReconnect(makeApi(room), room, who);
+  });
+
+  // ---------- Clock sync ----------
+  // Browsers ask "what time is it on the server?" so that everyone can start a
+  // sound at the SAME instant (each computer's clock is a bit different).
+  socket.on("clock:ping", (cb) => { if (typeof cb === "function") cb(Date.now()); });
+
+  // ---------- Live emoji reactions (generic, opt-in per game) ----------
+  // A game turns them on with `reactions: true` in its meta.js. Anyone in the
+  // room sends one emoji from a fixed list; everyone receives it with a name.
+  socket.on("room:react", ({ emoji } = {}) => {
+    const room = rooms[socket.data.code];
+    if (!room || !room.gameState) return;
+    const game = getGameById(room.gameId);
+    if (!game || !game.reactions || !REACTIONS.includes(emoji)) return;
+    const now = Date.now();
+    if (socket.data.lastReact && now - socket.data.lastReact < 600) return; // anti-spam
+    socket.data.lastReact = now;
+    let name = "Host";
+    if (socket.data.role === "player") {
+      const p = room.players.find((x) => x.seatId === socket.data.seatId);
+      name = p ? p.name : "?";
+    }
+    io.to(room.code).emit("room:reaction", { emoji, name });
   });
 
   // ---------- Player feedback (in-game "Feedback" button) ----------
