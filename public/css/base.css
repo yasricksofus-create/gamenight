@@ -641,3 +641,9 @@ body {
 .leave-btn:hover {
   background: rgba(0, 0, 0, 0.68);
 }
+
+/* ----- pixel-art avatars (engine) ----- */
+.px-av{border-radius:50%;image-rendering:pixelated;vertical-align:middle;background:#0b0618}
+.player-li{display:flex;align-items:center;gap:8px}
+.avatar-edit-btn{font:inherit;font-size:.8rem;cursor:pointer;border-radius:999px;padding:4px 10px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.08);color:inherit;margin-left:6px}
+.home-avatar{margin:0 0 12px}

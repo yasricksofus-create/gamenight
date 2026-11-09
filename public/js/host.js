@@ -28,7 +28,7 @@ function identify() {
   if (!gameId && !roomParam) { showError("Aucun jeu selectionne. Retourne a l'accueil."); return; }
   const tok = roomParam ? storedHostToken(roomParam) : null;
   if (roomParam && tok) socket.emit("host:reconnect", { code: roomParam, hostToken: tok });
-  else socket.emit("host:createRoom", { gameId });
+  else socket.emit("host:createRoom", { gameId, avatar: window.PixelAvatar ? PixelAvatar.mine() : null });
 }
 socket.on("connect", identify);
 if (socket.connected) identify();
@@ -106,7 +106,7 @@ socket.on("host:reconnected", ({ code, game, inGame }) => {
 // The stored room no longer exists -> make a fresh one.
 socket.on("host:reconnectFailed", () => {
   try { localStorage.removeItem("gn_host_" + roomParam); } catch (e) {}
-  socket.emit("host:createRoom", { gameId });
+  socket.emit("host:createRoom", { gameId, avatar: window.PixelAvatar ? PixelAvatar.mine() : null });
 });
 
 document.getElementById("start-btn").addEventListener("click", () => socket.emit("host:startGame"));
@@ -130,18 +130,23 @@ function renderCheatConsole(game) {
 
 socket.on("game:cheat", ({ cheat }) => showCheatEffect(cheat));
 
-socket.on("room:playersUpdate", ({ players }) => {
-  const list = document.getElementById("player-list");
-  document.getElementById("player-count").textContent = players.length;
-  if (players.length === 0) { list.innerHTML = '<li class="empty">En attente de joueurs…</li>'; return; }
-  list.innerHTML = "";
-  players.forEach((p) => {
-    const li = document.createElement("li");
-    li.textContent = p.name + (p.connected === false ? " (deconnecte…)" : "");
-    if (p.connected === false) li.classList.add("empty");
-    list.appendChild(li);
+socket.on("room:playersUpdate", ({ players }) => renderPlayerList(players));
+
+// ----- the host's own avatar (used when the host plays too) -----
+function showHostAvatar() {
+  const img = document.getElementById("host-avatar");
+  if (img && window.PixelAvatar) img.src = PixelAvatar.url(PixelAvatar.mine());
+}
+window.editMyAvatar = function () {
+  if (!window.AvatarCreator) return;
+  AvatarCreator.open({
+    title: "Mon avatar (host)",
+    value: PixelAvatar.mine(),
+    onSave: (a) => { PixelAvatar.save(a); socket.emit("host:setAvatar", { avatar: a }); showHostAvatar(); },
   });
-});
+};
+document.getElementById("edit-avatar").addEventListener("click", () => window.editMyAvatar());
+showHostAvatar();
 
 // Leave the room on purpose -> stop auto-reconnect and go back to the menu.
 const leaveBtn = document.getElementById("leave-btn");

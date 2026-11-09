@@ -495,21 +495,20 @@ function ownerOfRound(t, part) { return t.s().round.parts[part || 0].owner; }
     assert.ok(t.s().result.animMs > 1000);
   });
 
-  await test("host name + avatar choice", async () => {
+  await test("host name + avatars come from the engine (and follow changes)", async () => {
     const t = setup(["A", "B"]);
     t.act(t.H, "setHostName", { name: "Diddy" });
     assert.strictEqual(t.s().names.__host__, "Diddy");
-    assert.ok(Number.isInteger(t.s().avatars.p0.px), "a pixel avatar by default");
-    assert.notStrictEqual(t.s().avatars.p0.px, t.s().avatars.p1.px, "all different");
-    t.act(t.P(0), "setAvatar", { emoji: "👽", color: "#F04646" });
-    assert.deepStrictEqual(t.s().avatars.p0, { emoji: "👽", color: "#F04646", px: null });
-    t.act(t.P(0), "setAvatar", { emoji: "<script>", color: "red" }); // refused values
-    assert.deepStrictEqual(t.s().avatars.p0, { emoji: "👽", color: "#F04646", px: null });
-    t.act(t.P(0), "setAvatar", { px: 5 });
-    assert.strictEqual(t.s().avatars.p0.px, 5);
-    t.act(t.P(0), "setAvatar", { px: 999 }); // out of range -> ignored
-    assert.strictEqual(t.s().avatars.p0.px, 5);
+    // the engine owns the avatars: the game copies them, and follows a change
+    const av = { ears: "cat", hair: "none", eyes: "big", mouth: "cat", acc: "none", cheeks: true, face: "#ff9a3c", hairc: "#1b1030", bg: "#3b1f6e", shirt: "#22e0ff", accc: "#ff2fb0", inner: "#ff8fd0" };
+    t.room.players[0].avatar = av;
+    t.api.players = () => t.room.players.map((p) => ({ id: p.seatId, name: p.name, avatar: p.avatar }));
+    K.onAvatarChange(t.api, t.room, "p0");
+    assert.deepStrictEqual(t.s().avatars.p0, av);
+    t.act(t.P(0), "setAvatar", { px: 5 }); // the old in-game choice no longer exists
+    assert.deepStrictEqual(t.s().avatars.p0, av);
   });
+
 
   console.log(`\n${passed} test(s) OK` + (process.exitCode ? " — DES ECHECS" : ""));
   setTimeout(() => process.exit(process.exitCode || 0), 50);

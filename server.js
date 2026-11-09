@@ -17,6 +17,10 @@ const crypto = require("crypto");
 const { Server } = require("socket.io");
 const path = require("path");
 const fs = require("fs");
+// Pixel-art avatars (shared with the browsers): used to CHECK what a browser
+// sends and to give bots a face. Each seat (and the host) carries one.
+const PixelAvatar = require("./public/js/pixel-avatar.js");
+const cleanAvatar = (a) => PixelAvatar.clean(a) || PixelAvatar.random();
 // The engine loads every game from its own folder under /games (see the loader).
 const { games, getGameById, gameModules } = require("./engine/games-loader");
 
@@ -146,17 +150,18 @@ function generateRoomCode() {
 
 // The public player list (names + connection state) sent to the lobby views.
 function publicPlayers(room) {
-  return room.players.map((p) => ({ name: p.name, connected: p.connected }));
+  return room.players.map((p) => ({ id: p.seatId, name: p.name, connected: p.connected, avatar: p.avatar, isBot: !!p.isBot }));
 }
 function broadcastPlayers(room) {
-  io.to(room.code).emit("room:playersUpdate", { players: publicPlayers(room) });
+  io.to(room.code).emit("room:playersUpdate", { players: publicPlayers(room), hostAvatar: room.hostAvatar });
 }
 
 // The "api" is the ONLY way a game module talks to the browsers. Players are
 // addressed by their stable seatId; the api routes to their CURRENT socket.
 function makeApi(room) {
   return {
-    players: () => room.players.map((p) => ({ id: p.seatId, name: p.name })),
+    players: () => room.players.map((p) => ({ id: p.seatId, name: p.name, avatar: p.avatar, isBot: !!p.isBot })),
+    hostAvatar: () => room.hostAvatar,
     connected: (seatId) => {
       const p = room.players.find((x) => x.seatId === seatId);
       return !!(p && p.connected);
@@ -184,14 +189,14 @@ function closeRoom(room, message) {
 
 io.on("connection", (socket) => {
   // ---------- HOST: create a room ----------
-  socket.on("host:createRoom", ({ gameId }) => {
+  socket.on("host:createRoom", ({ gameId, avatar } = {}) => {
     const game = getGameById(gameId);
     if (!game) return socket.emit("room:error", { message: "Unknown game." });
 
     const code = generateRoomCode();
     rooms[code] = {
       code, gameId, hostToken: token(), hostSocketId: socket.id,
-      hostGrace: null, players: [], gameState: null,
+      hostGrace: null, players: [], gameState: null, hostAvatar: cleanAvatar(avatar),
     };
     socket.join(code);
     socket.data = { role: "host", code };
@@ -200,13 +205,14 @@ io.on("connection", (socket) => {
   });
 
   // ---------- HOST: reconnect to an existing room ----------
-  socket.on("host:reconnect", ({ code, hostToken }) => {
+  socket.on("host:reconnect", ({ code, hostToken, avatar } = {}) => {
     const room = rooms[String(code || "").toUpperCase()];
     if (!room || room.hostToken !== hostToken) {
       return socket.emit("host:reconnectFailed", {});
     }
     if (room.hostGrace) { clearTimeout(room.hostGrace); room.hostGrace = null; }
     room.hostSocketId = socket.id;
+    if (avatar) room.hostAvatar = cleanAvatar(avatar);
     socket.join(room.code);
     socket.data = { role: "host", code: room.code };
     socket.emit("host:reconnected", {
@@ -222,7 +228,7 @@ io.on("connection", (socket) => {
   });
 
   // ---------- PLAYER: join a room ----------
-  socket.on("player:join", ({ code, name }) => {
+  socket.on("player:join", ({ code, name, avatar } = {}) => {
     code = String(code || "").toUpperCase().trim();
     name = String(name || "").trim();
     const room = rooms[code];
@@ -239,12 +245,12 @@ io.on("connection", (socket) => {
       return socket.emit("join:error", { message: "Ce pseudo est deja pris ici." });
     }
 
-    const seat = { seatId: token(), name, socketId: socket.id, connected: true, grace: null };
+    const seat = { seatId: token(), name, socketId: socket.id, connected: true, grace: null, avatar: cleanAvatar(avatar) };
     room.players.push(seat);
     socket.join(code);
     socket.data = { role: "player", code, seatId: seat.seatId };
     socket.emit("join:success", {
-      code, game: getGameById(room.gameId), you: { id: seat.seatId, name },
+      code, game: getGameById(room.gameId), you: { id: seat.seatId, name, avatar: seat.avatar },
       seatId: seat.seatId, inGame: lateJoin,
     });
     broadcastPlayers(room);
@@ -266,7 +272,7 @@ io.on("connection", (socket) => {
     socket.data = { role: "player", code: room.code, seatId };
     socket.emit("reconnect:success", {
       code: room.code, game: getGameById(room.gameId),
-      you: { id: seatId, name: seat.name }, seatId, inGame: !!room.gameState,
+      you: { id: seatId, name: seat.name, avatar: seat.avatar }, seatId, inGame: !!room.gameState,
     });
     broadcastPlayers(room);
     const module = gameModules[room.gameId];
@@ -274,6 +280,29 @@ io.on("connection", (socket) => {
       module.onReconnect(makeApi(room), room, { seatId });
     }
     console.log(`[room ${room.code}] "${seat.name}" reconnected`);
+  });
+
+  // ---------- Changing one's avatar (lobby or during a game) ----------
+  // The game module is told (onAvatarChange) so it can refresh its screens.
+  socket.on("player:setAvatar", ({ avatar } = {}) => {
+    const room = rooms[socket.data.code];
+    if (!room || socket.data.role !== "player") return;
+    const seat = room.players.find((p) => p.seatId === socket.data.seatId);
+    const clean = PixelAvatar.clean(avatar);
+    if (!seat || !clean) return;
+    seat.avatar = clean;
+    broadcastPlayers(room);
+    const module = gameModules[room.gameId];
+    if (room.gameState && module && module.onAvatarChange) module.onAvatarChange(makeApi(room), room, seat.seatId);
+  });
+  socket.on("host:setAvatar", ({ avatar } = {}) => {
+    const room = rooms[socket.data.code];
+    const clean = PixelAvatar.clean(avatar);
+    if (!room || socket.data.role !== "host" || !clean) return;
+    room.hostAvatar = clean;
+    broadcastPlayers(room);
+    const module = gameModules[room.gameId];
+    if (room.gameState && module && module.onAvatarChange) module.onAvatarChange(makeApi(room), room, "__host__");
   });
 
   // ---------- Leaving on purpose (back to the menu) ----------
@@ -327,7 +356,7 @@ io.on("connection", (socket) => {
     const n = room.players.filter((p) => p.isBot).length + 1;
     let name = "Bot " + n;
     while (room.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) name += "*";
-    const seat = { seatId: token(), name, socketId: null, connected: true, grace: null, isBot: true };
+    const seat = { seatId: token(), name, socketId: null, connected: true, grace: null, isBot: true, avatar: PixelAvatar.random() };
     room.players.push(seat);
     broadcastPlayers(room);
     if (late && module.onPlayerJoin) module.onPlayerJoin(makeApi(room), room, seat.seatId);

@@ -36,6 +36,7 @@ function fillBots(api, room, onlyId) {
       t.note = pick(D.BOT_NOTES);
       if (s.settings.mode === "truebluff") t.nature = j.n === 0 ? "sincere" : "bluff";
       s.subs[j.id].push(t);
+      if (api.music && api.music.warm && t.preview) api.music.warm(t.preview);
     });
     if (s.phase === "submit") broadcast(api, room);
   });

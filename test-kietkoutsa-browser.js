@@ -96,7 +96,10 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
   // phones: avatar + mode vote
   await phones[0].p.waitForSelector("[data-mode=usurp]");
-  await phones[0].p.click("[data-av-e='👽']");
+  // change my avatar from inside the game (site-wide avatar creator)
+  await phones[0].p.click("[data-edit-avatar]");
+  await phones[0].p.click(".avc-modal [data-preset='3']");
+  await phones[0].p.click(".avc-modal .avc-save");
   await phones[0].p.click("[data-mode=classic]");
   await phones[1].p.click("[data-mode=classic]");
   // host: toggle a few options

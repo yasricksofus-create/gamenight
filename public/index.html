@@ -17,6 +17,11 @@
     <!-- JOIN section: for a player who received a code from the host -->
     <section class="join-box">
       <h2>Rejoindre une partie</h2>
+      <!-- The player's pixel-art avatar: kept on this device, used in every game -->
+      <div class="home-avatar">
+        <p class="hint" style="margin:0 0 6px">Ton avatar (il te suit dans tous les jeux)</p>
+        <div id="avatar-creator"></div>
+      </div>
       <form id="join-form">
         <input id="join-code" type="text" maxlength="4" placeholder="CODE" autocomplete="off" />
         <input id="join-name" type="text" maxlength="16" placeholder="Ton pseudo" autocomplete="off" />
@@ -32,6 +37,10 @@
     </section>
 
     <script src="/js/fps-meter.js"></script>
+    <!-- every emoji of the page is drawn as pixel art -->
+    <script src="/js/pixel-icons.js"></script>
+    <script src="/js/pixel-avatar.js"></script>
+    <script src="/js/avatar-creator.js"></script>
     <script src="/js/home.js"></script>
   </body>
 </html>

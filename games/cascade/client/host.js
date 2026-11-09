@@ -3,6 +3,9 @@
 // active color, direction, whose turn, each player's card count) + settings vote
 // tally + the host cheat bar. It only reacts to "cascade:*" events.
 (function () {
+  // Player names and typed text are put in the page as TEXT, never as HTML
+  // (otherwise a name like "<img onerror=...>" would run code on other screens).
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const socket = window.socket;
   const root = document.getElementById("game-root");
   let state = null;
@@ -222,8 +225,13 @@
       const pod = stage.querySelector('[data-seat="' + p.id + '"]');
       if (!pod) return;
       const av = pod.querySelector("[data-av]");
-      if (p.avatar) { av.style.background = p.avatar.color; if (av.textContent !== p.avatar.emoji) av.textContent = p.avatar.emoji; }
-      else { av.style.background = "#4C46F0"; av.textContent = (p.name || "?")[0].toUpperCase(); }
+      // the player's pixel-art face (redrawn only when it changes)
+      const src = window.PixelAvatar ? PixelAvatar.url(p.avatar || PixelAvatar.presets[0].parts) : "";
+      if (av.dataset.src !== src) {
+        av.dataset.src = src;
+        av.style.background = "transparent";
+        av.innerHTML = `<img src="${src}" alt="" style="width:100%;height:100%;border-radius:50%;image-rendering:pixelated">`;
+      }
       const nm = pod.querySelector("[data-nm]"); if (nm.textContent !== p.name) nm.textContent = p.name;
       pod.classList.toggle("turn", p.id === s.turn);
       pod.classList.toggle("off", p.connected === false);
@@ -295,7 +303,7 @@
     }
     const body = hands.map((h) => {
       const cards = h.cards.map((c) => unoCardHtml(c, { small: true })).join("");
-      return `<div style="margin:10px 0"><div class="uno-seat-name" style="margin-bottom:4px">${h.name} (${h.cards.length})</div>
+      return `<div style="margin:10px 0"><div class="uno-seat-name" style="margin-bottom:4px">${esc(h.name)} (${h.cards.length})</div>
         <div class="uno-hand" style="justify-content:flex-start">${cards}</div></div>`;
     }).join("");
     ov.innerHTML = `<div class="uno-sheet" style="max-width:760px;text-align:left">

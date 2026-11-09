@@ -21,7 +21,8 @@
           <span id="game-emoji" class="room-emoji"></span>
           <h1 id="game-name"></h1>
         </header>
-        <p class="you-are">Connecte en tant que <strong id="you-name"></strong></p>
+        <p class="you-are"><img id="you-avatar" class="px-av" width="44" height="44" alt=""> Connecté en tant que <strong id="you-name"></strong>
+          <button id="edit-avatar" type="button" class="avatar-edit-btn">Modifier mon avatar</button></p>
         <div class="waiting-card">
           <p>✅ Tu es dans la salle <strong id="room-code"></strong> !</p>
           <p class="subtitle">Regarde l'ecran du host. La partie va bientot commencer.</p>
@@ -44,7 +45,11 @@
     <button id="leave-btn" class="leave-btn" title="Quitter la salle">← Quitter</button>
 
     <script src="/js/fps-meter.js"></script>
+    <!-- every emoji of the page is drawn as pixel art -->
+    <script src="/js/pixel-icons.js"></script>
     <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/pixel-avatar.js"></script>
+    <script src="/js/avatar-creator.js"></script>
     <script src="/js/theme.js"></script>
     <script src="/js/effects.js"></script>
     <!-- Loads ONLY the active game's view (games/<id>/client/player.js) on demand. -->

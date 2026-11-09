@@ -26,7 +26,7 @@ function identify() {
   if (!code) { showError("Code de salle manquant."); return; }
   const seatId = storedSeat();
   if (seatId) socket.emit("player:reconnect", { code, seatId });
-  else if (name) socket.emit("player:join", { code, name });
+  else if (name) socket.emit("player:join", { code, name, avatar: window.PixelAvatar ? PixelAvatar.mine() : null });
   else showError("Pseudo manquant.");
 }
 socket.on("connect", identify);
@@ -43,6 +43,7 @@ function setup(game, youName) {
   document.getElementById("game-emoji").textContent = game.emoji;
   document.getElementById("game-name").textContent = game.name;
   document.getElementById("you-name").textContent = youName;
+  showMyAvatar();
   document.getElementById("room-code").textContent = code;
   if (window.Reactions) Reactions.enable(game, "player");
 }
@@ -78,17 +79,21 @@ socket.on("reconnect:failed", () => {
   else showError("Impossible de te reconnecter. Retourne a l'accueil.");
 });
 
-socket.on("room:playersUpdate", ({ players }) => {
-  const list = document.getElementById("player-list");
-  document.getElementById("player-count").textContent = players.length;
-  list.innerHTML = "";
-  players.forEach((p) => {
-    const li = document.createElement("li");
-    li.textContent = p.name + (p.connected === false ? " (deconnecte…)" : "");
-    if (p.connected === false) li.classList.add("empty");
-    list.appendChild(li);
+socket.on("room:playersUpdate", ({ players }) => renderPlayerList(players));
+
+// ----- my avatar: shown in the lobby, editable at any time (also by games) -----
+function showMyAvatar() {
+  const img = document.getElementById("you-avatar");
+  if (img && window.PixelAvatar) img.src = PixelAvatar.url(PixelAvatar.mine());
+}
+window.editMyAvatar = function () {
+  if (!window.AvatarCreator) return;
+  AvatarCreator.open({
+    value: PixelAvatar.mine(),
+    onSave: (a) => { PixelAvatar.save(a); socket.emit("player:setAvatar", { avatar: a }); showMyAvatar(); },
   });
-});
+};
+document.getElementById("edit-avatar").addEventListener("click", () => window.editMyAvatar());
 
 socket.on("game:cheat", ({ cheat }) => showCheatEffect(cheat));
 socket.on("game:started", showGame);

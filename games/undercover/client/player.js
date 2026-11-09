@@ -1,5 +1,8 @@
 // undercover-player.js -- Player-side view of Undercover (on the phone), all phases.
 (function () {
+  // Player names and typed text are put in the page as TEXT, never as HTML
+  // (otherwise a name like "<img onerror=...>" would run code on other screens).
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const socket = window.socket;
   const root = document.getElementById("game-root");
   let card = null;       // my private card (uc:you)
@@ -45,7 +48,7 @@
       }
     } else if (s.phase === "reveal") {
       if (s.mrwhiteGuessResult) {
-        html += `<p class="uc-wait">Mr. White : « ${s.mrwhiteGuessResult.guess} » — ${s.mrwhiteGuessResult.correct ? "correct !" : "rate."}</p>`;
+        html += `<p class="uc-wait">Mr. White : « ${esc(s.mrwhiteGuessResult.guess)} » — ${s.mrwhiteGuessResult.correct ? "correct !" : "rate."}</p>`;
       } else {
         const e = s.lastEliminated;
         html += `<p class="uc-wait">${e ? e.name + " est elimine (" + ucRoleLabel(e.role) + ")." : "Personne n'est elimine."}</p>`;
@@ -120,8 +123,8 @@
   function voteButtons(s) {
     const tieIds = s.tie ? s.tie.map((t) => t.id) : null;
     const btns = s.order.filter((p) => p.alive && p.id !== window.mySeatId && (!tieIds || tieIds.includes(p.id)))
-      .map((p) => `<button id="vote-${p.id}" class="uc-vote-btn">${p.name}</button>`).join("");
-    const title = s.tie ? `Égalité ! Revote entre ${s.tie.map((t) => t.name).join(" et ")} :` : "Qui est l'imposteur ? Vote :";
+      .map((p) => `<button id="vote-${p.id}" class="uc-vote-btn">${window.PixelAvatar && p.avatar ? `<img class="px-av" src="${PixelAvatar.url(p.avatar)}" width="26" height="26" alt=""> ` : ""}${esc(p.name)}</button>`).join("");
+    const title = s.tie ? `Égalité ! Revote entre ${s.tie.map((t) => esc(t.name)).join(" et ")} :` : "Qui est l'imposteur ? Vote :";
     return `<p class="uc-wait">${title}</p><div class="uc-vote-list">${btns}</div>`;
   }
 

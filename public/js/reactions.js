@@ -38,8 +38,9 @@ window.Reactions = (function () {
   function buildBar() {
     bar = document.createElement("div");
     bar.className = "gn-rx-bar"; bar.hidden = true;
-    bar.innerHTML = EMOJIS.map((e) => `<button type="button" aria-label="Reagir ${e}">${e}</button>`).join("");
-    bar.querySelectorAll("button").forEach((b) => (b.onclick = () => window.socket.emit("room:react", { emoji: b.textContent })));
+    bar.innerHTML = EMOJIS.map((e) => `<button type="button" data-emoji="${e}" aria-label="Réagir ${e}">${e}</button>`).join("");
+    // the emoji is read from data-emoji (the visible one is replaced by pixel art)
+    bar.querySelectorAll("button").forEach((b) => (b.onclick = () => window.socket.emit("room:react", { emoji: b.getAttribute("data-emoji") })));
     document.body.appendChild(bar);
     setInterval(() => { bar.hidden = !gameVisible(); }, 500);
   }

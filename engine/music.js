@@ -202,6 +202,42 @@ function rateLimiter(burst, perSec) {
   };
 }
 
+// ---------- previews kept in memory ----------
+// The last ~30 previews (a 30 s preview is ~0.3-1 MB). A game can "warm" the
+// next songs in advance (warm(url)): when the host screen asks for them, they
+// are already here and start instantly.
+const previewCache = lru(30, 30 * 60 * 1000);
+const inflight = new Map(); // url -> download already running
+const MAX_PREVIEW = 4 * 1024 * 1024;
+function warm(u) {
+  if (!isAllowedUrl(u) || typeof fetch !== "function") return Promise.resolve(null);
+  const hit = previewCache.get(u);
+  if (hit) return Promise.resolve(hit);
+  if (inflight.has(u)) return inflight.get(u);
+  const p = (async () => {
+    try {
+      const r = await fetch(u);
+      if (!r.ok) return null;
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > MAX_PREVIEW) return null;
+      const item = { buf, type: r.headers.get("content-type") || "audio/mpeg" };
+      previewCache.set(u, item);
+      return item;
+    } catch (e) { return null; } finally { inflight.delete(u); }
+  })();
+  inflight.set(u, p);
+  return p;
+}
+
+// Deezer preview links carry an expiry date ("exp=<seconds>"). True if the link
+// must be refreshed (expires within `withinMs`). Links without a date (iTunes)
+// never need it.
+function needsRefresh(u, withinMs) {
+  const m = /exp=(\d{9,11})/.exec(String(u || ""));
+  if (!m) return false;
+  return parseInt(m[1], 10) * 1000 - Date.now() < (withinMs || 0);
+}
+
 // ---------- HTTP routes ----------
 function mount(app) {
   // Generous: several phones on the same Wi-Fi share ONE public IP.
@@ -225,51 +261,62 @@ function mount(app) {
   // anyone could use our server as a free proxy), and the size is capped.
   // Last ~30 previews kept in memory (a 30 s preview is ~0.3-1 MB): replays,
   // reconnections and the "preload next song" never re-download from Deezer.
-  const previewCache = lru(30, 30 * 60 * 1000);
-  const MAX = 4 * 1024 * 1024; // 4 MB is far above any 30 s preview
-  async function getPreview(u) {
-    const hit = previewCache.get(u);
-    if (hit) return hit;
-    const r = await fetch(u);
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    const buf = Buffer.from(await r.arrayBuffer());
-    if (buf.length > MAX) throw new Error("too big");
-    const item = { buf, type: r.headers.get("content-type") || "audio/mpeg" };
-    previewCache.set(u, item);
-    return item;
-  }
-
   // GET /api/music/preview?u=<preview url>
   // Serves a preview THROUGH our server, so the host page gets it from its own
   // origin: that lets the browser analyse the sound (real visualiser) without
   // the CORS restriction. Only Deezer/Apple media URLs are accepted (otherwise
   // anyone could use our server as a free proxy).
-  // "Range" = "send me only bytes X to Y": the browser asks for it to jump to a
-  // precise second (host screen reloaded mid-round). We answer it ourselves
-  // from the copy in memory (HTTP 206 = partial content).
+  //  - Already in memory (see warm()): answered at once, "Range" included
+  //    (Range = "only bytes X to Y", used to jump to a precise second).
+  //  - Not in memory yet: the sound is STREAMED straight from Deezer as it
+  //    arrives (it starts playing right away), and a copy is saved in parallel
+  //    for the next time.
   app.get("/api/music/preview", proxyLimit, async (req, res) => {
     const u = String(req.query.u || "");
     if (!isAllowedUrl(u) || typeof fetch !== "function") return res.status(400).end();
-    let item;
-    try { item = await getPreview(u); } catch (e) { return res.status(502).end(); }
-    const total = item.buf.length;
-    res.setHeader("Content-Type", item.type);
     res.setHeader("Cache-Control", "public, max-age=600");
     res.setHeader("Accept-Ranges", "bytes");
+    const item = previewCache.get(u);
     const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ""));
-    if (m && (m[1] || m[2])) {
-      let start = m[1] ? parseInt(m[1], 10) : total - parseInt(m[2], 10);
-      let end = m[1] && m[2] ? parseInt(m[2], 10) : total - 1;
-      start = Math.max(0, start); end = Math.min(total - 1, end);
-      if (start > end) { res.setHeader("Content-Range", "bytes */" + total); return res.status(416).end(); }
-      res.status(206);
-      res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
-      res.setHeader("Content-Length", end - start + 1);
-      return res.end(item.buf.subarray(start, end + 1));
+    if (item) {
+      const total = item.buf.length;
+      res.setHeader("Content-Type", item.type);
+      if (m && (m[1] || m[2])) {
+        let start = m[1] ? parseInt(m[1], 10) : total - parseInt(m[2], 10);
+        let end = m[1] && m[2] ? parseInt(m[2], 10) : total - 1;
+        start = Math.max(0, start); end = Math.min(total - 1, end);
+        if (start > end) { res.setHeader("Content-Range", "bytes */" + total); return res.status(416).end(); }
+        res.status(206);
+        res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+        res.setHeader("Content-Length", end - start + 1);
+        return res.end(item.buf.subarray(start, end + 1));
+      }
+      res.setHeader("Content-Length", total);
+      return res.end(item.buf);
     }
-    res.setHeader("Content-Length", total);
-    res.end(item.buf);
+    // not in memory: stream it now, keep a copy for later (in the background)
+    warm(u);
+    try {
+      const headers = {};
+      if (req.headers.range) headers.Range = req.headers.range;
+      const r = await fetch(u, { headers });
+      if (!r.ok || !r.body) return res.status(502).end();
+      res.status(r.status === 206 ? 206 : 200);
+      res.setHeader("Content-Type", r.headers.get("content-type") || "audio/mpeg");
+      ["content-length", "content-range"].forEach((h) => { const v = r.headers.get(h); if (v) res.setHeader(h, v); });
+      const reader = r.body.getReader();
+      req.on("close", () => { try { reader.cancel(); } catch (e) {} });
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!res.write(Buffer.from(value))) await new Promise((ok) => res.once("drain", ok));
+      }
+      res.end();
+    } catch (e) {
+      if (!res.headersSent) res.status(502);
+      res.end();
+    }
   });
 }
 
-module.exports = { mount, search, charts, refresh, isAllowedUrl, sanitizeTrack };
+module.exports = { mount, search, charts, refresh, isAllowedUrl, sanitizeTrack, warm, needsRefresh };

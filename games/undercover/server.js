@@ -311,7 +311,9 @@ function broadcastState(api, room) {
     return;
   }
 
-  const order = s.order.map((id) => ({ id, name: s.names[id], alive: !!s.alive[id] }));
+  const avatars = {};
+  api.players().forEach((p) => (avatars[p.id] = p.avatar || null));
+  const order = s.order.map((id) => ({ id, name: s.names[id], alive: !!s.alive[id], avatar: avatars[id] || null }));
   const living = aliveIds(s);
   const payload = {
     ...base,
@@ -471,6 +473,11 @@ module.exports = {
         broadcastState(api, room);
         break;
     }
+  },
+
+  // a player changed their avatar: refresh the boards
+  onAvatarChange(api, room) {
+    if (room.gameState && room.gameState.order) broadcastState(api, room);
   },
 
   // Someone came back (a player to their seat, or the host). Resend their state.

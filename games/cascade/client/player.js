@@ -3,6 +3,9 @@
 // every action: play, draw, UNO, plus the awaited sub-steps (choose color, pay
 // target, flush 3 cards, use protection, stack-or-take, play the drawn card).
 (function () {
+  // Player names and typed text are put in the page as TEXT, never as HTML
+  // (otherwise a name like "<img onerror=...>" would run code on other screens).
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const socket = window.socket;
   const root = document.getElementById("game-root");
   let state = null;      // public table (cascade:state)
@@ -190,7 +193,7 @@
   }
   function payPicker(s) {
     const btns = s.players.filter((p) => p.id !== me())
-      .map((p) => `<button class="uno-btn ghost" data-pay="${p.id}">${p.name}</button>`).join("");
+      .map((p) => `<button class="uno-btn ghost" data-pay="${p.id}">${esc(p.name)}</button>`).join("");
     return `<p class="uno-sub"><strong>Pay :</strong> qui doit piocher 1 carte ?</p><div class="uno-pick">${btns}</div>`;
   }
   function protectPrompt(aw) {
@@ -216,7 +219,7 @@
     const targets = s.players.filter((p) => p.id !== me() && p.count === 1 && !p.said);
     if (!targets.length) return "";
     const btns = targets.map((p) =>
-      `<button class="uno-cheat" data-denounce="${p.id}">☝ Contre-UNO : ${p.name}</button>`).join("");
+      `<button class="uno-cheat" data-denounce="${p.id}">☝ Contre-UNO : ${esc(p.name)}</button>`).join("");
     return `<div class="uno-cheatbar" style="margin-top:10px">${btns}</div>`;
   }
 

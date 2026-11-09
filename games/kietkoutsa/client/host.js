@@ -177,9 +177,7 @@
       return send("setSetting", { key, value: isSwitch ? raw === "1" : raw });
     }
     if (b.hasAttribute("data-mode")) return send("setSetting", { key: "mode", value: b.getAttribute("data-mode") });
-    if (b.hasAttribute("data-av-px")) return send("setAvatar", { px: +b.getAttribute("data-av-px") });
-    if (b.hasAttribute("data-av-e")) return send("setAvatar", { emoji: b.getAttribute("data-av-e"), color: you && you.avatar && you.avatar.color });
-    if (b.hasAttribute("data-av-c")) return send("setAvatar", { emoji: you && you.avatar && you.avatar.emoji, color: b.getAttribute("data-av-c") });
+    if (b.hasAttribute("data-edit-avatar")) return window.editMyAvatar && window.editMyAvatar();
     if (b.hasAttribute("data-tab")) { endTab = b.getAttribute("data-tab"); return renderEnded(state); }
     if (b.hasAttribute("data-rate")) return send("rate", { part: +b.getAttribute("data-part"), v: +b.getAttribute("data-rate") });
     switch (b.id) {
@@ -274,7 +272,7 @@
     kktPatch("kkt-set-opts", block("opts"));
     kktPatch("kkt-set-host", block("host"));
     const hostP = (s.players || []).find((p) => p.id === ME);
-    kktPatch("kkt-host-av", st.hostPlays && hostP ? `<p class="kkt-small">Ton avatar :</p>` + kktAvatarPicker(hostP.avatar, s.emojis || [], s.colors || []) : "");
+    kktPatch("kkt-host-av", st.hostPlays && hostP ? `<p class="kkt-small">Ton avatar :</p>` + kktMyAvatar(hostP.avatar) : "");
     if (hostP) you = Object.assign({}, you || {}, { avatar: hostP.avatar });
     kktPatch("kkt-plist", playerChips(s.players || [], () => ({ txt: "prêt(e)" })) || `<p class="kkt-sub">Aucun joueur…</p>`);
     const n = (s.players || []).length;

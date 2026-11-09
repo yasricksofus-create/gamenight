@@ -60,4 +60,13 @@ joinForm.addEventListener("submit", (e) => {
   nameInput.focus();
 })();
 
+// 4) The avatar creator: every change is saved on this device; the player page
+// sends it to the room when joining.
+if (window.AvatarCreator && window.PixelAvatar) {
+  AvatarCreator.mount(document.getElementById("avatar-creator"), {
+    value: PixelAvatar.mine(),
+    onChange: (a) => PixelAvatar.save(a),
+  });
+}
+
 loadGames();

@@ -68,16 +68,6 @@ const BADGES = {
   dj:        { emoji: "💿", label: "Le DJ de la soirée", desc: "ses sons ont reçu le plus de 👍" },
 };
 
-// Avatars offered to players (they can pick their own in the settings).
-const AV_COLORS = ["#F04646", "#F0A020", "#F0E246", "#5DF046", "#2ED0C0",
-  "#4C46F0", "#9B5DE5", "#F15BB5", "#00BBF9", "#FF7B54", "#8AC926", "#E86AF0"];
-const AV_EMOJIS = ["🦊", "🐼", "🐧", "🐸", "🐙", "🦄", "🐯", "🐨", "🦁", "🐵",
-  "🐰", "🐳", "🦉", "🐝", "🦖", "🐢", "👽", "🤖", "👻", "🎃", "🐲", "🦩"];
-
-// Pixel-art avatars: their drawings live in client/common.js (KKT_PIXEL); the
-// server only needs how many there are, to check a choice.
-const PIXEL_AVATARS = 24;
-
 // How each setting is shown on the host screen. The host page BUILDS its
 // settings panel from this list: adding a setting = one line here (+ its rule
 // in config.js), no screen code to touch.
@@ -101,4 +91,4 @@ const SETTINGS_UI = [
   { group: "host", key: "hostPlays", kind: "switch", label: "🖥️ Le host joue aussi (depuis cet écran)", desc: "Tes choix passent par un panneau secret. Le mieux : joue depuis ton téléphone et laisse cet écran en mode TV." },
 ];
 
-module.exports = { MODES, THEMES, BOT_QUERIES, BOT_NOTES, BADGES, AV_COLORS, AV_EMOJIS, PIXEL_AVATARS, SETTINGS_UI };
+module.exports = { MODES, THEMES, BOT_QUERIES, BOT_NOTES, BADGES, SETTINGS_UI };

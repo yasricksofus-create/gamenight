@@ -63,25 +63,14 @@ function clearTimers(s) {
 }
 
 // ---------- seating ----------
-// A new participant gets a pixel-art avatar nobody else has (+ an emoji and a
-// colour as a fallback / alternative look).
-function freeAvatar(s) {
-  const all = Object.values(s.avatars);
-  const usedE = new Set(all.map((a) => a.emoji));
-  const usedC = new Set(all.map((a) => a.color));
-  const usedP = new Set(all.map((a) => a.px));
-  const e = shuffle(D.AV_EMOJIS).find((x) => !usedE.has(x)) || pick(D.AV_EMOJIS);
-  const c = shuffle(D.AV_COLORS).find((x) => !usedC.has(x)) || pick(D.AV_COLORS);
-  const pxs = shuffle(Array.from({ length: D.PIXEL_AVATARS }, (_, i) => i));
-  const px = pxs.find((x) => !usedP.has(x));
-  return { emoji: e, color: c, px: px === undefined ? pxs[0] : px };
-}
 function seatParticipant(s, id, name, opts) {
   opts = opts || {};
   if (!s.players.includes(id)) s.players.push(id);
   delete s.left[id];
   s.names[id] = name;
-  if (!s.avatars[id]) s.avatars[id] = opts.avatar || freeAvatar(s);
+  // the avatar is the player's own pixel-art face, managed by the engine
+  if (opts.avatar) s.avatars[id] = opts.avatar;
+  else if (!(id in s.avatars)) s.avatars[id] = null;
   if (s.scores[id] == null) s.scores[id] = 0;
   s.det[id] = s.det[id] || 0; s.cam[id] = s.cam[id] || 0;
   s.streak[id] = s.streak[id] || 0;
@@ -189,8 +178,9 @@ function startRound(api, room) {
   // changed, re-broadcast (players start at startsAt, so it is usually in time).
   const roundNo = s.roundNo;
   item.parts.forEach((part) => {
-    // usually already refreshed during the previous reveal: skip it then
-    if (!api.music || !part.track.preview || Date.now() - (part.track.refreshedAt || 0) < 120000) return;
+    // Only when the link is about to expire. Refreshing a still-valid link gives
+    // a NEW address: every device would then reload the sound (= a delay).
+    if (!api.music || !part.track.preview || !linkExpiring(api, part.track.preview, 3 * 60000)) return;
     refreshPart(api, part).then((changed) => {
       if (changed && room.gameState === s && s.roundNo === roundNo && s.phase === "playing") broadcast(api, room);
     });
@@ -202,9 +192,17 @@ function startRound(api, room) {
 function refreshPart(api, part) {
   part.track.refreshedAt = Date.now();
   return api.music.refresh(part.track).then((url) => {
-    if (url && url !== part.track.preview) { part.track.preview = url; return true; }
+    if (url && url !== part.track.preview) { part.track.preview = url; warmTrack(api, part.track); return true; }
     return false;
   }).catch(() => false);
+}
+function linkExpiring(api, url, withinMs) {
+  return api.music && api.music.needsRefresh ? api.music.needsRefresh(url, withinMs) : false;
+}
+// Ask the server's music service to download a preview NOW (into memory), so the
+// host screen gets it instantly when the round starts.
+function warmTrack(api, track) {
+  if (api.music && api.music.warm && track && track.preview) api.music.warm(track.preview);
 }
 
 // A song that cannot be played (no preview, dead link): drop it and move on.
@@ -417,8 +415,13 @@ function endRound(api, room) {
   s.phase = "reveal";
   s.revealAt = Date.now();
   s.result.animMs = revealAnimMs(voteList.length); // phones wait this long (no spoiler)
+  // get the next song ready during the reveal: fresh link if needed, in memory
   const nextItem = s.queue[s.idx + 1];
-  if (nextItem && api.music) nextItem.parts.forEach((p) => { if (p.track.preview) refreshPart(api, p); });
+  if (nextItem && api.music) nextItem.parts.forEach((p) => {
+    if (!p.track.preview) return;
+    if (linkExpiring(api, p.track.preview, 15 * 60000)) refreshPart(api, p);
+    else warmTrack(api, p.track);
+  });
   botRatings(room);
   if (s.settings.autoNext) {
     const ms = CFG.REVEAL_BASE_MS + CFG.REVEAL_PER_VOTE_MS * voteList.length;
@@ -464,7 +467,7 @@ function pubTrack(s, t) {
 // Static data (mode list, avatar choices) never changes: sent once per arrival
 // instead of in every state message.
 function sendStatic(api) {
-  api.toAll("kkt:static", { modes: D.MODES, emojis: D.AV_EMOJIS, colors: D.AV_COLORS, pixelCount: D.PIXEL_AVATARS, settingsUI: D.SETTINGS_UI });
+  api.toAll("kkt:static", { modes: D.MODES, settingsUI: D.SETTINGS_UI });
 }
 
 // Small, frequent changes (a vote, a bet, a rating...) are GROUPED: one send
@@ -551,7 +554,7 @@ function broadcast(api, room, force) {
     const nextItem = s.queue[s.idx + 1];
     pub = (Object.assign(base, {
       round: s.idx + 1, total: s.queue.length, result: s.result, leaderboard: leaderboard(s),
-      last: s.idx + 1 >= s.queue.length, nextAt: s.nextAt || 0,
+      last: s.idx + 1 >= s.queue.length, nextAt: s.nextAt || 0, revealAt: s.revealAt || 0,
       // preload the next song(s) during the reveal (only the audio, no owner)
       nextPreviews: nextItem ? nextItem.parts.map((p) => p.track.preview).filter(Boolean) : [],
       ratings: s.result.parts.map((p) => ratingOf(s, p.track)),
@@ -616,14 +619,15 @@ function newState(api, room, prev, keepScores) {
   const phones = api.players();
   // Default: the host plays from the shared screen only if there are too few phones.
   if (!prev) s.settings.hostPlays = phones.length < 3;
-  phones.forEach((p) => seatParticipant(s, p.id, p.name, { avatar: prev && prev.avatars[p.id] }));
-  if (s.settings.hostPlays) seatParticipant(s, HOST_SEAT, s.hostName, { avatar: prev && prev.avatars[HOST_SEAT] });
+  phones.forEach((p) => seatParticipant(s, p.id, p.name, { avatar: p.avatar }));
+  if (s.settings.hostPlays) seatParticipant(s, HOST_SEAT, s.hostName, { avatar: hostAvatar(api) });
   return s;
 }
 
-function setHostPlays(s, on) {
+const hostAvatar = (api) => (api.hostAvatar ? api.hostAvatar() : null);
+function setHostPlays(api, s, on) {
   s.settings.hostPlays = on;
-  if (on) seatParticipant(s, HOST_SEAT, s.hostName);
+  if (on) seatParticipant(s, HOST_SEAT, s.hostName, { avatar: hostAvatar(api) });
   else {
     s.players = s.players.filter((id) => id !== HOST_SEAT);
     delete s.modeVotes[HOST_SEAT];
@@ -654,7 +658,7 @@ module.exports = {
     const seat = seatOf(room, seatId);
     if (!s || !seat) return;
     const late = s.phase !== "settings" && s.phase !== "submit";
-    seatParticipant(s, seatId, seat.name, { late });
+    seatParticipant(s, seatId, seat.name, { late, avatar: seat.avatar });
     if (s.phase === "submit") {
       s.subs[seatId] = [];
       if (s.settings.mode === "usurp") { // give them someone to imitate
@@ -675,19 +679,6 @@ module.exports = {
     const amIn = s.players.includes(me) && !s.left[me];
     payload = payload || {};
 
-    // ----- things anyone can do in settings / submit: pick an avatar -----
-    if ((s.phase === "settings" || s.phase === "submit") && type === "setAvatar" && amIn) {
-      const cur = s.avatars[me];
-      const emoji = D.AV_EMOJIS.includes(payload.emoji) ? payload.emoji : cur.emoji;
-      const color = D.AV_COLORS.includes(payload.color) ? payload.color : cur.color;
-      // px = a pixel-art avatar number; choosing an emoji switches pixel art off
-      let px = cur.px;
-      if (Number.isInteger(payload.px) && payload.px >= 0 && payload.px < D.PIXEL_AVATARS) px = payload.px;
-      else if (payload.emoji && D.AV_EMOJIS.includes(payload.emoji)) px = null;
-      s.avatars[me] = { emoji, color, px };
-      return broadcastSoon(api, room);
-    }
-
     // ----- settings -----
     if (s.phase === "settings") {
       if (type === "voteMode" && amIn && D.MODES[payload.mode]) {
@@ -698,7 +689,7 @@ module.exports = {
         const v = cleanSetting(payload.key, payload.value);
         if (v === undefined) return;
         if (payload.key === "perPlayer" && s.settings.mode === "truebluff") return; // always 2 there
-        if (payload.key === "hostPlays") setHostPlays(s, v);
+        if (payload.key === "hostPlays") setHostPlays(api, s, v);
         else s.settings[payload.key] = v;
         if (payload.key === "mode" && v === "truebluff") s.settings.perPlayer = 2;
         return broadcast(api, room);
@@ -751,6 +742,7 @@ module.exports = {
         t.note = String(payload.note || "").trim().slice(0, 120);
         if (s.settings.mode === "truebluff") t.nature = mine.some((x) => x.nature === "sincere") ? "bluff" : "sincere";
         mine.push(t);
+        warmTrack(api, t); // downloaded in the background while the others choose
         return broadcast(api, room);
       }
       if (type === "removeTrack" && amIn) {
@@ -864,6 +856,14 @@ module.exports = {
       scheduleRoundTimers(api, room);
       broadcast(api, room);
     }
+  },
+
+  // A player (or the host) changed their avatar in the engine's creator.
+  onAvatarChange(api, room, seatId) {
+    const s = room.gameState;
+    if (!s || !(seatId in s.avatars)) return;
+    s.avatars[seatId] = seatId === HOST_SEAT ? hostAvatar(api) : ((api.players().find((p) => p.id === seatId) || {}).avatar || null);
+    broadcastSoon(api, room);
   },
 
   onReconnect(api, room) {

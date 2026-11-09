@@ -1,5 +1,8 @@
 // undercover-host.js -- Host-side board for the Undercover game (all phases).
 (function () {
+  // Player names and typed text are put in the page as TEXT, never as HTML
+  // (otherwise a name like "<img onerror=...>" would run code on other screens).
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   const socket = window.socket;
   const root = document.getElementById("game-root");
   let state = null;
@@ -65,7 +68,8 @@
   function orderList(s, numbered) {
     return `<ul class="uc-order">` + s.order.map((p, i) => {
       const num = numbered ? `<span class="uc-turn">${i + 1}</span>` : "";
-      return `<li class="uc-player${p.alive ? "" : " out"}">${num}${p.name}</li>`;
+      const av = window.PixelAvatar && p.avatar ? `<img class="px-av" src="${PixelAvatar.url(p.avatar)}" width="30" height="30" alt=""> ` : "";
+      return `<li class="uc-player${p.alive ? "" : " out"}">${num}${av}${esc(p.name)}</li>`;
     }).join("") + `</ul>`;
   }
 
@@ -110,22 +114,22 @@
     } else if (s.phase === "vote") {
       html = `<p class="uc-eyebrow">Manche ${s.round}</p>
         <h1 class="uc-title">${s.tie ? "Égalité !" : "Vote"}</h1>
-        ${s.tie ? `<p class="subtitle">Revote entre ${s.tie.map((t) => t.name).join(" et ")}</p>` : ""}
+        ${s.tie ? `<p class="subtitle">Revote entre ${s.tie.map((t) => esc(t.name)).join(" et ")}</p>` : ""}
         <p class="subtitle">${s.votesCount}/${s.votesNeeded} ont vote</p>
         ${orderList(s, false)}
         <button id="btn-resolve" class="uc-btn ghost">Forcer la revelation</button>${cheatBar()}`;
     } else if (s.phase === "mrwhite") {
       html = `<p class="uc-eyebrow">Demasque !</p>
-        <h1 class="uc-title uc-expose">${s.mrwhite.name} etait MR. WHITE</h1>
+        <h1 class="uc-title uc-expose">${esc(s.mrwhite.name)} était MR. WHITE</h1>
         <p class="subtitle">Derniere chance : il tente de deviner le mot des civils, devant tout le monde…</p>${cheatBar()}`;
     } else if (s.phase === "reveal") {
       let txt;
       if (s.mrwhiteGuessResult) {
         txt = s.mrwhiteGuessResult.correct
-          ? `Mr. White a devine « <strong>${s.mrwhiteGuessResult.guess}</strong> » — CORRECT ! Il vole la victoire.`
-          : `Mr. White a propose « <strong>${s.mrwhiteGuessResult.guess}</strong> » — rate. Il est elimine.`;
+          ? `Mr. White a devine « <strong>${esc(s.mrwhiteGuessResult.guess)}</strong> » — CORRECT ! Il vole la victoire.`
+          : `Mr. White a propose « <strong>${esc(s.mrwhiteGuessResult.guess)}</strong> » — rate. Il est elimine.`;
       } else if (s.lastEliminated) {
-        txt = `<strong>${s.lastEliminated.name}</strong> est elimine — c'etait un <strong>${ucRoleLabel(s.lastEliminated.role)}</strong>.`;
+        txt = `<strong>${esc(s.lastEliminated.name)}</strong> est elimine — c'etait un <strong>${ucRoleLabel(s.lastEliminated.role)}</strong>.`;
       } else {
         txt = "Egalite : personne n'est elimine cette manche.";
       }
@@ -158,7 +162,7 @@
         <span>Undercover : <strong>${s.pair.undercover.name}</strong></span></div>`;
     }
     const rolesList = (s.finalRoles || []).map((r) =>
-      `<li class="uc-player">${r.name} — ${ucRoleLabel(r.role)}</li>`).join("");
+      `<li class="uc-player">${esc(r.name)} — ${ucRoleLabel(r.role)}</li>`).join("");
     return `<p class="uc-eyebrow">Fin de partie</p>
       <h1 class="uc-title">${winTxt}</h1>${secret}
       <ul class="uc-order">${rolesList}</ul>
@@ -175,7 +179,7 @@
     }
     ov.innerHTML = `<div class="uc-sheet">
       <h2>Roles (host seulement)</h2>
-      <ul class="uc-order">${roles.map((r) => `<li class="uc-player">${r.name} — ${r.role}</li>`).join("")}</ul>
+      <ul class="uc-order">${roles.map((r) => `<li class="uc-player">${esc(r.name)} — ${esc(r.role)}</li>`).join("")}</ul>
       <button class="uc-btn" id="uc-roles-close">Fermer</button></div>`;
     ov.classList.add("show");
     document.getElementById("uc-roles-close").onclick = () => ov.classList.remove("show");

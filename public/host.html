@@ -34,7 +34,9 @@
         </div>
 
         <section class="players">
-          <h2>Joueurs connectes (<span id="player-count">0</span>)</h2>
+          <h2>Joueurs connectés (<span id="player-count">0</span>)</h2>
+          <p class="hint" style="margin:4px 0 8px"><img id="host-avatar" class="px-av" width="28" height="28" alt=""> Ton avatar si tu joues aussi :
+            <button id="edit-avatar" type="button" class="avatar-edit-btn">Modifier</button></p>
           <ul id="player-list" class="player-list">
             <li class="empty">En attente de joueurs…</li>
           </ul>
@@ -62,9 +64,13 @@
 
     <!-- Socket.IO client library, served automatically by the server -->
     <script src="/js/fps-meter.js"></script>
+    <!-- every emoji of the page is drawn as pixel art -->
+    <script src="/js/pixel-icons.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <!-- QR code library (tiny, from cdnjs). If it fails to load, no QR is shown. -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="/js/pixel-avatar.js"></script>
+    <script src="/js/avatar-creator.js"></script>
     <script src="/js/theme.js"></script>
     <script src="/js/effects.js"></script>
     <script src="/js/sound.js"></script>

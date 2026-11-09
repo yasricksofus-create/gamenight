@@ -51,10 +51,8 @@
   root.addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (!b || !root.contains(b)) return;
-    if (b.hasAttribute("data-av-px")) return send("setAvatar", { px: +b.getAttribute("data-av-px") });
-    if (b.hasAttribute("data-av-e")) return send("setAvatar", { emoji: b.getAttribute("data-av-e"), color: you && you.avatar && you.avatar.color });
     if (b.id === "kkt-mute") return setPhoneMuted(!phoneMuted());
-    if (b.hasAttribute("data-av-c")) return send("setAvatar", { emoji: you && you.avatar && you.avatar.emoji, color: b.getAttribute("data-av-c") });
+    if (b.hasAttribute("data-edit-avatar")) return window.editMyAvatar && window.editMyAvatar();
     if (b.hasAttribute("data-mode")) return send("voteMode", { mode: b.getAttribute("data-mode") });
     if (b.hasAttribute("data-rate")) return send("rate", { part: +b.getAttribute("data-part"), v: +b.getAttribute("data-rate") });
     if (b.hasAttribute("data-tab")) { endTab = b.getAttribute("data-tab"); built = null; return render(); }
@@ -91,13 +89,12 @@
   function renderSettings(s) {
     skeleton("settings", `<div class="kkt-stage"><div class="kkt-wrap">
       <p class="kkt-eyebrow">Mise en place</p><h1 class="kkt-title">Kietkoutsa Reborn</h1>
-      <div class="kkt-card"><h2 class="kkt-h2" style="margin-top:0">Ton avatar</h2><div id="kkt-me-av"></div><div id="kkt-av"></div></div>
+      <div class="kkt-card"><h2 class="kkt-h2" style="margin-top:0">Ton avatar</h2><div id="kkt-me-av"></div></div>
       <div class="kkt-card"><h2 class="kkt-h2" style="margin-top:0">Vote pour le mode</h2><div id="kkt-modes"></div>
         <p class="kkt-small">Le host décide d'appliquer (ou non) le vote de la salle.</p></div>
       <div class="kkt-card"><h2 class="kkt-h2" style="margin-top:0">Réglages du host</h2><div id="kkt-sum"></div></div>
       <p class="kkt-sub">Prépare tes meilleurs sons ! 🎧</p></div></div>`);
-    kktPatch("kkt-me-av", `<div class="kkt-row">${kktAvatar(you.avatar, 54)} <b>${kktEsc(you.name)}</b></div>`);
-    kktPatch("kkt-av", kktAvatarPicker(you.avatar, s.emojis || [], s.colors || []));
+    kktPatch("kkt-me-av", `<p style="margin:0 0 8px"><b>${kktEsc(you.name)}</b></p>` + kktMyAvatar(you.avatar));
     kktPatch("kkt-modes", `<div class="kkt-modes">` + Object.keys(s.modes || {}).map((id) => {
       const m = s.modes[id], n = (s.modeTally || {})[id];
       return `<button class="kkt-mode ${you.modeVote === id ? "on" : ""}" data-mode="${id}">${n ? `<span class="tally">${n}</span>` : ""}
@@ -172,7 +169,9 @@
   function renderReveal(s) {
     const r = s.result;
     const key = "reveal|" + s.round;
-    if (!revealShownAt[key]) revealShownAt[key] = Date.now();
+    // wait until the host's animation is over, counted from when the reveal
+    // started on the SERVER (a phone that reloads mid-reveal doesn't wait again)
+    if (!revealShownAt[key]) revealShownAt[key] = s.revealAt ? Date.now() - Math.max(0, kktNow() - s.revealAt) : Date.now();
     // the server says how long the host screen's animation lasts
     const suspense = r.animMs || (KKT_TIMING.REVEAL_START_MS + r.votes.length * KKT_TIMING.REVEAL_STEP_MS + 200 + KKT_TIMING.DRUM_MS);
     const waitMs = revealShownAt[key] + suspense - Date.now();

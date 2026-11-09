@@ -13,12 +13,6 @@ const COLORS = ["R", "J", "V", "B"];
 const SETTINGS_SECONDS = 60;
 const HAND_SIZE = 7;
 
-// Auto-avatars for the host "table" view (players don't pick yet).
-const AVATAR_COLORS = ["#F04646", "#F0A020", "#F0E246", "#5DF046", "#2ED0C0",
-  "#4C46F0", "#9B5DE5", "#F15BB5", "#00BBF9", "#FF7B54", "#8AC926", "#E86AF0"];
-const AVATAR_EMOJIS = ["🦊", "🐼", "🐧", "🐸", "🐙", "🦄", "🐯", "🐨", "🦁", "🐵",
-  "🐰", "🐳", "🦉", "🐝", "🦖", "🐢"];
-
 // How many of each custom card go in the deck (from the user's "Max de carte").
 const CUSTOM_COUNTS = { flush: 8, pay: 10, print: 8, plus1: 4, protect: 4 };
 
@@ -218,13 +212,9 @@ function deal(api, room) {
   s.players = players.map((p) => p.id);
   s.names = {}; players.forEach((p) => (s.names[p.id] = p.name));
 
-  // Auto-assign a distinct avatar (emoji + color) per player for the table view.
-  // (Kept in state so it stays stable for the whole round.)
-  const cols = shuffle(AVATAR_COLORS), emos = shuffle(AVATAR_EMOJIS);
+  // Each player's own pixel-art avatar (made on the home page, kept by the engine).
   s.avatars = {};
-  s.players.forEach((id, i) => {
-    s.avatars[id] = { color: cols[i % cols.length], emoji: emos[i % emos.length] };
-  });
+  players.forEach((p) => { s.avatars[p.id] = p.avatar || null; });
 
   s.drawPile = shuffle(buildDeck(s.settings.rules.customs));
   s.hands = {};
@@ -462,6 +452,14 @@ module.exports = {
       return;
     }
     if (cheatId === "redeal") { deal(api, room); return; }
+  },
+
+  // a player changed their avatar: show the new face at the table
+  onAvatarChange(api, room, seatId) {
+    const s = room.gameState;
+    if (!s || !s.avatars || !(seatId in s.avatars)) return;
+    s.avatars[seatId] = (api.players().find((p) => p.id === seatId) || {}).avatar || null;
+    broadcast(api, room);
   },
 
   onReconnect(api, room, who) {
