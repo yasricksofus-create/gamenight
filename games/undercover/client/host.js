@@ -133,7 +133,7 @@
       } else {
         txt = "Égalité : personne n'est éliminé cette manche.";
       }
-      html = `<h1 class="uc-title">Elimination</h1><p class="uc-elim">${txt}</p>
+      html = `<h1 class="uc-title">Élimination</h1><p class="uc-elim">${txt}</p>
         <button id="btn-next" class="uc-btn">${s.winner ? "Voir le résultat" : "Manche suivante"}</button>${cheatBar()}`;
     } else if (s.phase === "ended") {
       html = endScreen(s);
@@ -155,12 +155,16 @@
     const winTxt = s.winner === "civils" ? "Les Civils l'emportent !" : "Les Imposteurs l'emportent !";
     let secret;
     if (s.pair.kind === "word") {
-      secret = `<div class="uc-pair"><span>Mot des civils : <strong>${s.pair.civil}</strong></span>
-        <span>Mot de l'undercover : <strong>${s.pair.undercover}</strong></span></div>`;
+      secret = `<div class="uc-pair"><span>Mot des civils : <strong>${esc(s.pair.civil)}</strong></span>
+        <span>Mot de l'undercover : <strong>${esc(s.pair.undercover)}</strong></span></div>`;
     } else {
-      secret = `<div class="uc-pair"><span>Civils : <strong>${s.pair.civil.name}</strong></span>
-        <span>Undercover : <strong>${s.pair.undercover.name}</strong></span></div>`;
+      secret = `<div class="uc-pair"><span>Civils : <strong>${esc(s.pair.civil.name)}</strong></span>
+        <span>Undercover : <strong>${esc(s.pair.undercover.name)}</strong></span></div>`;
     }
+    // why this pair was chosen + what the players thought of it
+    if (s.pair.why) secret += `<p class="uc-wait">Le point commun : ${esc(s.pair.why)}</p>`;
+    const r = s.rating || { up: 0, down: 0 };
+    secret += `<p class="uc-wait uc-rate-count">Notez la paire sur vos téléphones : 👍 ${r.up} · 👎 ${r.down}</p>`;
     const rolesList = (s.finalRoles || []).map((r) =>
       `<li class="uc-player">${esc(r.name)} — ${ucRoleLabel(r.role)}</li>`).join("");
     return `<p class="uc-eyebrow">Fin de partie</p>
@@ -178,7 +182,7 @@
       document.body.appendChild(ov);
     }
     ov.innerHTML = `<div class="uc-sheet">
-      <h2>Roles (host seulement)</h2>
+      <h2>Rôles (host seulement)</h2>
       <ul class="uc-order">${roles.map((r) => `<li class="uc-player">${esc(r.name)} — ${esc(r.role)}</li>`).join("")}</ul>
       <button class="uc-btn" id="uc-roles-close">Fermer</button></div>`;
     ov.classList.add("show");

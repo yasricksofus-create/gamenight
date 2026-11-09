@@ -19,43 +19,31 @@ const SETTINGS_SECONDS = 60;
 // Modes offered in the settings vote. themeKey drives the visual DA on screen.
 const MODES = [
   { key: "classique", label: "Classique (FR)", theme: "marine" },
-  { key: "anime_confondu", label: "Anime melanges", theme: "gold" },
-  { key: "anime_saison", label: "Anime recents", theme: "gold" },
-  { key: "univers", label: "Univers precis", theme: "ring" },
+  { key: "anime_confondu", label: "Anime mélangés", theme: "gold" },
+  { key: "anime_saison", label: "Anime récents", theme: "gold" },
+  { key: "univers", label: "Univers précis", theme: "ring" },
 ];
 
-// GROUPS of similar French words. The module picks a group then TWO different
-// words in it (one civil, one undercover). Any two of a group can be paired, so
-// the matchups are far more numerous and harder than fixed pairs. Add a word to
-// a group, or a whole group, to grow it.
-const WORD_GROUPS = [
-  ["Chat", "Tigre", "Lion", "Panthere", "Guepard", "Leopard"],
-  ["Chien", "Loup", "Renard", "Chacal", "Hyene"],
-  ["Cafe", "The", "Chocolat chaud", "Cappuccino", "Tisane"],
-  ["Citron", "Orange", "Mandarine", "Pamplemousse", "Clementine"],
-  ["Fraise", "Framboise", "Cerise", "Mure", "Groseille", "Myrtille"],
-  ["Velo", "Moto", "Trottinette", "Scooter", "Monocycle"],
-  ["Soleil", "Lune", "Etoile", "Planete", "Comete"],
-  ["Trompette", "Saxophone", "Clarinette", "Flute", "Trombone"],
-  ["Piano", "Guitare", "Violon", "Harpe", "Violoncelle"],
-  ["Montagne", "Colline", "Falaise", "Volcan", "Plateau", "Dune"],
-  ["Riviere", "Lac", "Fleuve", "Etang", "Mare", "Ocean"],
-  ["Avion", "Helicoptere", "Montgolfiere", "Planeur", "Fusee"],
-  ["Bateau", "Sous-marin", "Voilier", "Kayak", "Paquebot", "Radeau"],
-  ["Gateau", "Tarte", "Crepe", "Gaufre", "Beignet", "Pancake"],
-  ["Chocolat", "Caramel", "Bonbon", "Nougat", "Miel", "Confiture"],
-  ["Ecureuil", "Hamster", "Souris", "Castor", "Marmotte", "Lapin"],
-  ["Train", "Metro", "Tramway", "Tgv", "Funiculaire"],
-  ["Epee", "Couteau", "Poignard", "Sabre", "Hache", "Lance"],
-  ["Chateau", "Forteresse", "Citadelle", "Donjon", "Tour", "Palais"],
-  ["Requin", "Dauphin", "Baleine", "Orque", "Phoque", "Otarie"],
-  ["Neige", "Pluie", "Grele", "Brouillard", "Verglas", "Rosee"],
-  ["Croissant", "Baguette", "Brioche", "Pain au chocolat", "Chausson"],
-  ["Fourchette", "Cuillere", "Couteau", "Louche", "Spatule"],
-  ["Roi", "Reine", "Prince", "Empereur", "Duc", "Chevalier"],
-  ["Rose", "Tulipe", "Marguerite", "Pivoine", "Orchidee", "Jonquille"],
-  ["Pizza", "Burger", "Tacos", "Kebab", "Panini", "Hot-dog"],
-];
+// Words and characters now come as HAND-PICKED PAIRS (see data.js).
+const ALL_WORDS = [].concat(...anime.WORDS); // for a bot Mr. White's random guess
+
+// ---------- pair memory (which pairs were played / disliked) ----------
+// Per room: pairs already played tonight (no repeat until all were seen) and
+// the 👍/👎 votes. Global (whole server, until it restarts): the same votes, so
+// a pair disliked by several groups stops coming out for everyone. Each vote is
+// also printed in the server log (visible on Render) to fix the list later.
+const GLOBAL_RATINGS = new Map(); // key -> { up, down }
+function memoryOf(room) {
+  room.ucMemory = room.ucMemory || { seen: new Set(), ratings: new Map() };
+  return room.ucMemory;
+}
+function pairKey(a, b) { return [a, b].sort().join(" / "); }
+function isBadPair(room, key) {
+  const r = memoryOf(room).ratings.get(key);
+  if (r && r.down >= 2 && r.down > r.up) return true; // disliked tonight
+  const g = GLOBAL_RATINGS.get(key);
+  return !!(g && g.down - g.up >= 3);                 // disliked by many groups
+}
 
 // ---------- small helpers ----------
 function shuffle(arr) {
@@ -132,7 +120,7 @@ function scheduleBots(api, room) {
   if (s.phase === "mrwhite" && isBotSeat(room, s.mrwhiteGuessing) && s._botGuess !== s.mrwhiteGuessing) {
     const id = s._botGuess = s.mrwhiteGuessing;
     setTimeout(() => {
-      if (room.gameState === s && s.phase === "mrwhite" && s.mrwhiteGuessing === id) act(id, "mrwhiteGuess", { word: pick(pick(WORD_GROUPS)) });
+      if (room.gameState === s && s.phase === "mrwhite" && s.mrwhiteGuessing === id) act(id, "mrwhiteGuess", { word: pick(ALL_WORDS) });
     }, 2500);
   }
 }
@@ -205,8 +193,9 @@ function deal(api, room) {
   const mrwhiteId = mrw ? shuffled[nbUnder] : null;
 
   // Build the secret content according to the chosen mode.
-  const pair = buildPair(state.settings.mode);
+  const pair = buildPair(state.settings.mode, room);
   state.pair = pair;
+  state.rating = {}; // 👍/👎 of each player at the end
 
   const roles = {}, alive = {}, names = {}, cards = {};
   players.forEach((p) => {
@@ -248,27 +237,44 @@ function deal(api, room) {
   broadcastState(api, room);
 }
 
-function buildPair(mode) {
-  if (mode === "classique") {
-    const group = pick(WORD_GROUPS);
-    const [c, u] = pickTwo(group);
-    return { kind: "word", civil: c, undercover: u };
-  }
-  // Pick a GROUP (cluster) of similar characters, then two different members.
-  let group, universe = null;
-  if (mode === "anime_saison") group = pick(anime.SAISON);
+// Pick a pair for the chosen mode: never one already played tonight (until
+// every pair was seen), never one the players disliked. The civil side is
+// chosen at random, so a pair can be played both ways.
+function buildPair(mode, room) {
+  let cands; // [{ a, b, why, universe }]
+  if (mode === "classique") cands = anime.WORDS.map(([a, b]) => ({ a, b }));
   else if (mode === "univers") {
-    universe = pick(Object.keys(anime.UNIVERS));
-    group = anime.UNIVERS[universe];
-  } else group = pick(anime.CONFONDU); // anime_confondu (default)
+    cands = [];
+    Object.keys(anime.UNIVERS).forEach((u) => anime.UNIVERS[u].forEach(([a, b, why]) => cands.push({ a, b, why, universe: u })));
+  } else {
+    const list = mode === "anime_saison" ? anime.SAISON : anime.CONFONDU;
+    cands = list.map(([a, b, why]) => ({ a, b, why }));
+  }
+  const mem = memoryOf(room);
+  const keyOf = (c) => mode + ":" + pairKey(c.a, c.b);
+  let ok = cands.filter((c) => !isBadPair(room, keyOf(c)));
+  if (!ok.length) ok = cands; // everything disliked?! play anyway
+  let fresh = ok.filter((c) => !mem.seen.has(keyOf(c)));
+  if (!fresh.length) { ok.forEach((c) => mem.seen.delete(keyOf(c))); fresh = ok; } // all seen: start over
+  if (mode === "univers") { // pick the universe first, so big series do not dominate
+    const u = pick([...new Set(fresh.map((c) => c.universe))]);
+    fresh = fresh.filter((c) => c.universe === u);
+  }
+  const c = pick(fresh);
+  mem.seen.add(keyOf(c));
+  const [civ, und] = Math.random() < 0.5 ? [c.a, c.b] : [c.b, c.a];
+  const base = { key: keyOf(c), why: c.why || null };
+  if (mode === "classique") return Object.assign(base, { kind: "word", civil: civ, undercover: und });
+  return Object.assign(base, { kind: "character", universe: c.universe || null, civil: anime.character(civ), undercover: anime.character(und) });
+}
 
-  const [civ, und] = pickTwo(group);
-  return {
-    kind: "character",
-    universe,
-    civil: { name: civ.name, desc: civ.desc },
-    undercover: { name: und.name, desc: und.desc },
-  };
+// Mr. White's guess: accents/case ignored; for a character, the first name OR
+// the last name is enough ("Gojo" for "Gojo Satoru", "Luffy" for "Monkey D. Luffy").
+function guessMatches(guess, target) {
+  const g = norm(guess);
+  if (!g) return false;
+  if (g === norm(target)) return true;
+  return String(target).split(/[\s.]+/).some((part) => part.length >= 3 && norm(part) === g);
 }
 
 function cardFor(role, pair) {
@@ -337,6 +343,8 @@ function broadcastState(api, room) {
   }
   if (s.phase === "ended") {
     payload.pair = s.pair;
+    const r = Object.values(s.rating || {});
+    payload.rating = { up: r.filter((x) => x).length, down: r.filter((x) => !x).length };
     payload.finalRoles = s.order.map((id) => ({ name: s.names[id], role: s.roles[id] }));
   }
   api.toAll("uc:state", payload);
@@ -406,7 +414,7 @@ module.exports = {
       case "mrwhiteGuess": {
         if (state.phase !== "mrwhite" || me !== state.mrwhiteGuessing) break;
         const guess = payload && payload.word;
-        const correct = norm(guess) && norm(guess) === norm(civilWord(state));
+        const correct = state.pair.kind === "word" ? !!norm(guess) && norm(guess) === norm(civilWord(state)) : guessMatches(guess, civilWord(state));
         state.mrwhiteGuessResult = { guess: String(guess || ""), correct };
         const id = state.mrwhiteGuessing;
         if (correct) {
@@ -436,6 +444,25 @@ module.exports = {
         }
         break;
 
+      case "ratePair": { // 👍 / 👎 on the pair, at the end of the game
+        if (state.phase !== "ended" || !state.pair || isHost || !state.names[me]) break;
+        const up = !!(payload && payload.up);
+        const before = state.rating[me];
+        if (before === up) break;
+        state.rating[me] = up;
+        const bump = (map) => {
+          const r = map.get(state.pair.key) || { up: 0, down: 0 };
+          if (before !== undefined) r[before ? "up" : "down"]--;
+          r[up ? "up" : "down"]++;
+          map.set(state.pair.key, r);
+          return r;
+        };
+        bump(memoryOf(room).ratings);
+        const g = bump(GLOBAL_RATINGS);
+        console.log("[undercover] paire " + (up ? "👍" : "👎") + " " + state.pair.key + "  (total 👍" + g.up + " 👎" + g.down + ")");
+        broadcastState(api, room);
+        break;
+      }
       case "replay":
         // At the end, the host can restart: everyone goes back to the settings vote.
         if (isHost && state.phase === "ended") openSettings(api, room);

@@ -86,6 +86,65 @@ async function test(name, fn) {
     assert.ok(["reveal", "mrwhite", "vote"].includes(s.phase));
   });
 
+  await test("Undercover: every pair is valid (names known, no duplicates, a reason given)", async () => {
+    const d = require("./games/undercover/data.js");
+    const seen = new Set();
+    const check = (list, where) => list.forEach(([a, b, why]) => {
+      assert.ok(d.CHARS[a] && d.CHARS[b], where + ": unknown character " + a + " / " + b);
+      assert.notStrictEqual(a, b, where + ": same character twice");
+      assert.ok(why, where + ": no reason for " + a + " / " + b);
+      const k = where + [a, b].sort().join("/");
+      assert.ok(!seen.has(k), where + ": duplicate " + k); seen.add(k);
+    });
+    check(d.CONFONDU, "mélangés"); check(d.SAISON, "récents");
+    Object.keys(d.UNIVERS).forEach((u) => { assert.ok(d.UNIVERS[u].length >= 3, u + " needs 3 pairs"); check(d.UNIVERS[u], u); });
+    d.WORDS.forEach(([a, b]) => { assert.notStrictEqual(a, b); const k = "w" + [a, b].sort().join("/"); assert.ok(!seen.has(k), "duplicate words " + k); seen.add(k); });
+  });
+
+  await test("Undercover: no pair comes back in the same evening; each mode deals", async () => {
+    const t = setup(undercover, ["A", "B", "C", "D"], []);
+    t.act("host", "finalizeSettings");
+    const keys = new Set();
+    for (let i = 0; i < 60; i++) { undercover.onCheat(t.api, t.room, "redeal"); keys.add(t.s().pair.key); }
+    assert.strictEqual(keys.size, 60, "60 deals = 60 different pairs");
+    ["anime_confondu", "anime_saison", "univers"].forEach((m) => {
+      t.s().settings.mode = m;
+      undercover.onCheat(t.api, t.room, "redeal");
+      const p = t.s().pair;
+      assert.strictEqual(p.kind, "character");
+      assert.ok(p.civil.name && p.civil.desc && p.undercover.desc && p.why);
+      if (m === "univers") assert.ok(p.universe);
+    });
+  });
+
+  await test("Undercover: two 👎 remove the pair for the evening", async () => {
+    const t = setup(undercover, ["A", "B", "C", "D"], []);
+    t.act("host", "finalizeSettings");
+    const key = t.s().pair.key;
+    t.s().phase = "ended";
+    t.act("p0", "ratePair", { up: false });
+    t.act("p1", "ratePair", { up: false });
+    t.act("p1", "ratePair", { up: false }); // same vote twice counts once
+    const st = t.log.filter((x) => x[1] === "uc:state").pop()[2];
+    assert.deepStrictEqual(st.rating, { up: 0, down: 2 });
+    assert.strictEqual(t.room.ucMemory.ratings.get(key).down, 2);
+    t.room.ucMemory.seen.clear(); // even when everything is "fresh" again...
+    for (let i = 0; i < 300; i++) { undercover.onCheat(t.api, t.room, "redeal"); assert.notStrictEqual(t.s().pair.key, key); }
+  });
+
+  await test("Undercover: Mr. White can say just the first or last name", async () => {
+    const t = setup(undercover, ["A", "B", "C", "D"], []);
+    t.act("host", "finalizeSettings");
+    const s = t.s();
+    s.pair = { kind: "character", key: "x", civil: { name: "Monkey D. Luffy" }, undercover: { name: "Son Goku" } };
+    s.roles.p0 = "mrwhite"; s.phase = "mrwhite"; s.mrwhiteGuessing = "p0";
+    t.act("p0", "mrwhiteGuess", { word: "luffy" });
+    assert.strictEqual(s.mrwhiteGuessResult.correct, true);
+    s.phase = "mrwhite"; s.mrwhiteGuessing = "p0";
+    t.act("p0", "mrwhiteGuess", { word: "D" }); // too short to count
+    assert.strictEqual(s.mrwhiteGuessResult.correct, false);
+  });
+
   console.log(`\n${ok} test(s) OK` + (process.exitCode ? " — DES ECHECS" : ""));
   setTimeout(() => process.exit(process.exitCode || 0), 50);
 })();

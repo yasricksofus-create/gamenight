@@ -9,6 +9,7 @@
   let state = null;      // shared public state
   let votedSeq = -1;     // the vote I already voted in (a revote = a new number)
   let myVote = { mode: null, mrWhite: null }; // my settings choices (local)
+  let rated = { key: null, up: null };          // my 👍/👎 on the pair of the game
   const myName = new URLSearchParams(location.search).get("name"); // to read my final role
 
   socket.on("uc:you", (c) => { card = c; render(); });
@@ -48,7 +49,7 @@
       }
     } else if (s.phase === "reveal") {
       if (s.mrwhiteGuessResult) {
-        html += `<p class="uc-wait">Mr. White : « ${esc(s.mrwhiteGuessResult.guess)} » — ${s.mrwhiteGuessResult.correct ? "correct !" : "rate."}</p>`;
+        html += `<p class="uc-wait">Mr. White : « ${esc(s.mrwhiteGuessResult.guess)} » — ${s.mrwhiteGuessResult.correct ? "correct !" : "raté."}</p>`;
       } else {
         const e = s.lastEliminated;
         html += `<p class="uc-wait">${e ? e.name + " est éliminé (" + ucRoleLabel(e.role) + ")." : "Personne n'est éliminé."}</p>`;
@@ -60,9 +61,24 @@
       const won = (s.winner === "civils" && myRole === "civil")
         || (s.winner === "impostors" && (myRole === "undercover" || myRole === "mrwhite"));
       html += `<p class="uc-result">${won ? "🎉 Ton camp gagne !" : "😖 Ton camp perd."}</p>`;
+      // rate the pair: helps remove the bad ones (it is NOT about who won)
+      const p = s.pair || {};
+      const a = p.kind === "word" ? p.civil : p.civil && p.civil.name;
+      const b = p.kind === "word" ? p.undercover : p.undercover && p.undercover.name;
+      if (a && b) {
+        if (rated.key !== p.key) rated = { key: p.key, up: null };
+        html += `<div class="uc-rate"><p class="uc-wait">La paire <strong>${esc(a)}</strong> / <strong>${esc(b)}</strong> était…</p>
+          <div class="uc-rate-btns"><button class="uc-btn${rated.up === true ? " on" : ""}" data-rate="1">👍 Bien trouvée</button>
+          <button class="uc-btn${rated.up === false ? " on" : ""}" data-rate="0">👎 Pas terrible</button></div></div>`;
+      }
     }
 
     root.innerHTML = html;
+    root.querySelectorAll("[data-rate]").forEach((b) => (b.onclick = () => {
+      rated.up = b.getAttribute("data-rate") === "1";
+      root.querySelectorAll("[data-rate]").forEach((x) => x.classList.toggle("on", x === b));
+      send("ratePair", { up: rated.up });
+    }));
     afterRender(s, alive);
   }
 

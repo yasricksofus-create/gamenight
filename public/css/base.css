@@ -396,6 +396,11 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.3);
   color: var(--text);
 }
+/* end of game: rate the pair (👍 / 👎) */
+.uc-rate { margin-top: 1rem; }
+.uc-rate-btns { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
+.uc-rate-btns .uc-btn { background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25); min-height: 48px; }
+.uc-rate-btns .uc-btn.on { background: linear-gradient(135deg, var(--primary), var(--secondary)); border-color: transparent; }
 .uc-elim {
   font-size: 1.2rem;
 }
