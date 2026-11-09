@@ -109,7 +109,8 @@
         <button id="btn-vote" class="uc-btn">Passer au vote</button>${cheatBar()}`;
     } else if (s.phase === "vote") {
       html = `<p class="uc-eyebrow">Manche ${s.round}</p>
-        <h1 class="uc-title">Vote</h1>
+        <h1 class="uc-title">${s.tie ? "Égalité !" : "Vote"}</h1>
+        ${s.tie ? `<p class="subtitle">Revote entre ${s.tie.map((t) => t.name).join(" et ")}</p>` : ""}
         <p class="subtitle">${s.votesCount}/${s.votesNeeded} ont vote</p>
         ${orderList(s, false)}
         <button id="btn-resolve" class="uc-btn ghost">Forcer la revelation</button>${cheatBar()}`;

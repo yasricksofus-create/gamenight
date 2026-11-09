@@ -14,6 +14,9 @@ window.GameClient = (function () {
     return new Promise((resolve, reject) => {
       const s = document.createElement("script");
       s.src = src;
+      // async=false: the browser downloads all the scripts AT THE SAME TIME but
+      // still runs them in the order they were added (common.js first).
+      s.async = false;
       s.onload = resolve;
       s.onerror = () => reject(new Error("Echec de chargement : " + src));
       document.body.appendChild(s);
@@ -27,8 +30,8 @@ window.GameClient = (function () {
     loaded[key] = true;
     const base = "/games/" + encodeURIComponent(gameId) + "/client/";
     try {
-      await inject(base + "common.js"); // helpers first
-      await inject(base + role + ".js"); // then the host or player view
+      // both requested together (parallel download), executed in order
+      await Promise.all([inject(base + "common.js"), inject(base + role + ".js")]);
       // The bundle's listeners are attached now: ask the server to (re)send the
       // current game state, so nothing is missed if a broadcast already happened.
       if (window.socket && window.socket.connected) window.socket.emit("game:sync");

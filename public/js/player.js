@@ -4,7 +4,8 @@
 // keep in this browser. A reload then reconnects to the SAME seat (same hand /
 // role) instead of creating a new player. "Quitter" clears it and goes home.
 
-const socket = io();
+// WebSocket first (faster start), long-polling as a fallback for strict networks.
+const socket = io({ transports: ["websocket", "polling"] });
 window.socket = socket;
 window.mySeatId = null;
 

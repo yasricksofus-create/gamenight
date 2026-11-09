@@ -5,7 +5,8 @@
 // SAME room instead of opening a new one. Starting a NEW game from the menu uses
 // a URL WITHOUT ?room, so it creates a fresh room.
 
-const socket = io();
+// WebSocket first (faster start), long-polling as a fallback for strict networks.
+const socket = io({ transports: ["websocket", "polling"] });
 window.socket = socket;
 
 const params = new URLSearchParams(window.location.search);

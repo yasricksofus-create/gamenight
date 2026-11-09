@@ -1,6 +1,6 @@
 // theme.js -- Apply a game's "DA" (art direction) to the current page.
 //
-// Each game defines a set of colors in games.js. Here we push those colors into
+// Each game defines a set of colors in its meta.js (games/<id>/meta.js). Here we push those colors into
 // CSS variables on the page's root element, so the whole room instantly takes
 // on that game's look. Shared by the host and player pages.
 function applyTheme(theme) {

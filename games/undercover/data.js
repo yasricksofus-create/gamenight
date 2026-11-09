@@ -12,6 +12,46 @@
 
 // ---- Mixed anime: look-alike characters from different series ----
 const CONFONDU = [
+  // Grands méchants charismatiques
+  [
+    { name: "Ryomen Sukuna", desc: "Marques noires sur le visage, quatre yeux, sourire cruel." },
+    { name: "Muzan Kibutsuji", desc: "Cheveux noirs ondulés, yeux rouges de chat, élégant et glacial." },
+    { name: "Frieza", desc: "Petit, peau blanche et violette, queue, voix polie et menaçante." },
+    { name: "Madara Uchiha", desc: "Longs cheveux noirs en bataille, armure rouge, regard dédaigneux." },
+    { name: "Sosuke Aizen", desc: "Cheveux bruns plaqués, sourire calme, manipulateur absolu." },
+  ],
+  // Lunettes et cerveaux de l'équipe
+  [
+    { name: "Shikamaru Nara", desc: "Cheveux noirs en queue haute, l'air de s'ennuyer, stratège génial." },
+    { name: "L Lawliet", desc: "Cheveux noirs en bataille, cernes, assis accroupi, mange des sucreries." },
+    { name: "Senku Ishigami", desc: "Cheveux verts et blancs dressés, sourire en coin, scientifique." },
+    { name: "Armin Arlert", desc: "Blond au carré, yeux bleus, timide mais brillant tacticien." },
+    { name: "Tenya Iida", desc: "Cheveux bleu nuit, lunettes, très strict, gestes mécaniques." },
+  ],
+  // Héroïnes aux longs cheveux noirs
+  [
+    { name: "Nezuko Kamado", desc: "Longs cheveux noirs aux pointes orange, bambou dans la bouche." },
+    { name: "Hinata Hyuga", desc: "Longs cheveux bleu nuit, yeux pâles, très timide." },
+    { name: "Nico Robin", desc: "Longs cheveux noirs, calme, sourire mystérieux." },
+    { name: "Akame", desc: "Longs cheveux noirs, yeux rouges, épée, peu bavarde." },
+    { name: "Mai Sakurajima", desc: "Longs cheveux noirs, serre-tête lapin, regard blasé." },
+  ],
+  // Rouquins et rousses au caractère bien trempé
+  [
+    { name: "Shanks", desc: "Cheveux roux, trois cicatrices sur l'œil gauche, cape noire, souriant." },
+    { name: "Erza Scarlet", desc: "Longs cheveux rouges, armure, autoritaire." },
+    { name: "Kyojuro Rengoku", desc: "Cheveux jaunes et rouges en flammes, sourire immense, énergique." },
+    { name: "Gaara", desc: "Cheveux roux courts, tatouage sur le front, gourde de sable." },
+    { name: "Hange Zoe", desc: "Cheveux roux-bruns en queue, lunettes, passionnée et excentrique." },
+  ],
+  // Monstres mignons et mascottes
+  [
+    { name: "Pikachu", desc: "Petite souris jaune, joues rouges, oreilles pointues noires au bout." },
+    { name: "Chopper", desc: "Petit renne, chapeau rose, nez bleu, très mignon." },
+    { name: "Happy", desc: "Petit chat bleu volant, toujours avec un poisson." },
+    { name: "Pochita", desc: "Petit chien orange avec une tronçonneuse sur la tête." },
+    { name: "Jiji", desc: "Petit chat noir aux grands yeux, compagnon d'une jeune sorcière." },
+  ],
   // Cheveux blancs / argentés, classe et puissants
   [
     { name: "Gojo Satoru", desc: "Grand, cheveux blancs en bataille, yeux clairs souvent cachés par un bandeau." },
@@ -218,6 +258,20 @@ const UNIVERS = {
     { name: "Aki Hayakawa", desc: "Cheveux noirs mi-longs, sérieux, cigarette." },
     { name: "Makima", desc: "Cheveux oranges tressés, yeux aux anneaux, énigmatique." },
     { name: "Himeno", desc: "Cheveux noirs courts, cache-œil, décontractée." },
+  ],
+  "Spy x Family": [
+    { name: "Loid Forger", desc: "Blond plaqué, costume, espion parfait et calme." },
+    { name: "Yor Forger", desc: "Longs cheveux noirs, robe noire, tueuse timide." },
+    { name: "Anya Forger", desc: "Petite, cheveux roses, couvre-cheveux noirs, lit les pensées." },
+    { name: "Damian Desmond", desc: "Petit garçon brun, coiffure en pointe, fier et timide." },
+    { name: "Bond Forger", desc: "Grand chien blanc tout doux, voit l'avenir." },
+  ],
+  "Blue Lock": [
+    { name: "Isagi Yoichi", desc: "Cheveux noirs, mèches sur le front, regard analytique." },
+    { name: "Bachira Meguru", desc: "Cheveux noirs à pointes jaunes, sourire joueur, dribbleur." },
+    { name: "Rin Itoshi", desc: "Cheveux noirs, cils longs, regard froid de prodige." },
+    { name: "Nagi Seishiro", desc: "Cheveux blancs, l'air endormi, contrôle de balle fou." },
+    { name: "Chigiri Hyoma", desc: "Longs cheveux roses-rouges, ultra rapide." },
   ],
 };
 

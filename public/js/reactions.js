@@ -46,6 +46,8 @@ window.Reactions = (function () {
 
   function onReaction({ emoji, name }) {
     if (!enabled) return;
+    // at most 20 flying emojis at once: a spam wave can't slow the screen down
+    if (document.querySelectorAll(".gn-rx-fly,.gn-rx-mini").length >= 20) return;
     if (role === "host") {
       const el = document.createElement("div");
       el.className = "gn-rx-fly";

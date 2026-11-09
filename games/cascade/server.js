@@ -151,6 +151,7 @@ function broadcast(api, room) {
     lastAction: s.lastAction || null,
   };
   api.toAll("cascade:state", pub);
+  scheduleBot(api, room);
   // Re-send every player their hand on EVERY update, so a played/drawn card is
   // reflected immediately on the phone (the hand changes on almost every action).
   sendHands(api, s);
@@ -160,6 +161,54 @@ function broadcast(api, room) {
     if (s.awaiting && s.awaiting.seatId === id) mine.awaiting = s.awaiting;
     api.toPlayer(id, "cascade:you", mine);
   });
+}
+
+// ---------- BOTS (dev/solo testing: a bot is a seat flagged isBot) ----------
+// After every update, if it is a bot's move (its turn, or a question aimed at
+// it), it plays ~1 s later through the SAME actions as a human player.
+function isBotSeat(room, id) { const p = (room.players || []).find((x) => x.seatId === id); return !!(p && p.isBot); }
+function scheduleBot(api, room) {
+  const s = room.gameState;
+  if (!s || s.phase !== "playing") return;
+  const who = s.awaiting ? s.awaiting.seatId : s.players[s.turn];
+  if (!isBotSeat(room, who)) return;
+  const seq = s._botSeq = (s._botSeq || 0) + 1;
+  setTimeout(() => {
+    if (room.gameState !== s || s._botSeq !== seq || s.phase !== "playing") return;
+    botMove(api, room, s, who);
+  }, 900 + Math.floor(Math.random() * 700));
+}
+function botMove(api, room, s, me) {
+  const act = (type, payload) => module.exports.handle(api, { isHost: false, seatId: me }, room, type, payload || {});
+  const hand = s.hands[me] || [];
+  const aw = s.awaiting && s.awaiting.seatId === me ? s.awaiting : null;
+  if (aw) {
+    if (aw.type === "color") { // the colour it holds the most
+      const n = {}; hand.forEach((c) => { if (c.color) n[c.color] = (n[c.color] || 0) + 1; });
+      return act("chooseColor", { color: Object.keys(n).sort((a, b) => n[b] - n[a])[0] || COLORS[0] });
+    }
+    if (aw.type === "pay-target") {
+      const others = s.players.filter((x) => x !== me);
+      return act("payTarget", { seatId: others[Math.floor(Math.random() * others.length)] });
+    }
+    if (aw.type === "flush") return act("flushDiscard", { cardIds: hand.slice(0, 3).map((c) => c.id) });
+    if (aw.type === "protect") return act("protectDecision", { use: true });
+    if (aw.type === "play-drawn") return act("playDrawn", { play: true });
+    if (aw.type === "stack-or-take") {
+      const st = hand.find((c) => c.kind === s.pendingType);
+      return st ? act("play", { cardId: st.id }) : act("stackTake");
+    }
+    return;
+  }
+  if (s.players[s.turn] !== me) return;
+  if (s.pendingDraw > 0) return act("draw");
+  const top = topCard(s);
+  const ok = hand.filter((c) => playable(c, top, s.activeColor));
+  // keep the jokers / special cards for later: colored cards first
+  ok.sort((a, b) => (a.color === null) - (b.color === null));
+  if (!ok.length) return act("draw");
+  if (hand.length === 2) s.saidUno[me] = true; // a bot never forgets to say it
+  act("play", { cardId: ok[0].id });
 }
 
 // ---------- deal ----------

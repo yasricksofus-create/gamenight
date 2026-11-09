@@ -8,7 +8,7 @@ module.exports = {
   emoji: "🎴",
   theme: { primary: "#4C46F0", secondary: "#F04646", background: "#0b132b", text: "#eaf0ff" },
   cheats: [
-    { id: "reveal-hands", label: "Voir les mains", emoji: "👁️" },
+    { id: "reveal-hands", label: "Voir les mains", emoji: "👁️", secret: true },
     { id: "skip-turn", label: "Sauter le tour actuel", emoji: "⏭️" },
     { id: "redeal", label: "Redistribuer", emoji: "🔄" },
   ],

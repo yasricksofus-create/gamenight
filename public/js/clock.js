@@ -32,7 +32,8 @@ window.ServerClock = (function () {
 
   async function sync() {
     const samples = [];
-    for (let i = 0; i < 5; i++) {
+    const n = ready ? 2 : 5; // first calibration: 5 samples; later checks: 2 are enough
+    for (let i = 0; i < n; i++) {
       const r = await sample();
       if (r) samples.push(r);
     }

@@ -8,7 +8,7 @@ module.exports = {
   emoji: "🕵️",
   theme: { primary: "#B4872E", secondary: "#9E2B1E", background: "#12100D", text: "#F1E6C9" },
   cheats: [
-    { id: "reveal-role", label: "Reveler les roles", emoji: "👁️" },
+    { id: "reveal-role", label: "Reveler les roles", emoji: "👁️", secret: true },
     { id: "redeal", label: "Relancer la distribution", emoji: "🔄" },
     { id: "cancel-elim", label: "Annuler l'elimination", emoji: "↩️" },
     { id: "revote", label: "Relancer le vote", emoji: "🗳️" },

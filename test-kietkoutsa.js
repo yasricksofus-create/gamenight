@@ -439,12 +439,15 @@ function ownerOfRound(t, part) { return t.s().round.parts[part || 0].owner; }
     const t = setup(["A", "B", "C", "D"]);
     t.act(t.H, "beginSubmit"); submitAll(t, 4);
     t.act(t.H, "startRounds");
-    const before = t.log.all.filter(([e]) => e === "kkt:state").length;
+    const sends = () => t.log.all.filter(([e]) => e === "kkt:state" || e === "kkt:patch").length;
+    const before = sends();
     const o = ownerOfRound(t);
     ["p0", "p1", "p2", "p3"].filter((x) => x !== o).forEach((id) => t.act({ seatId: id }, "vote", { target: o }));
-    assert.strictEqual(t.log.all.filter(([e]) => e === "kkt:state").length, before, "nothing sent yet (batched)");
+    assert.strictEqual(sends(), before, "nothing sent yet (batched)");
     await wait(160);
-    assert.strictEqual(t.log.all.filter(([e]) => e === "kkt:state").length, before + 1, "exactly one grouped send");
+    assert.strictEqual(sends(), before + 1, "exactly one grouped send");
+    const patch = t.last("kkt:patch");
+    assert.ok(patch && patch.votedCount === 3 && !("parts" in patch), "a vote only sends what changed");
     // the owner's private info did not change -> not re-sent
     const youCount = (t.log.player[o] || []).filter(([e]) => e === "kkt:you").length;
     t.act({ seatId: ["p0", "p1", "p2", "p3"].find((x) => x !== o) }, "setBet", { bet: 1 });
@@ -453,14 +456,59 @@ function ownerOfRound(t, part) { return t.s().round.parts[part || 0].owner; }
     K.onCheat(t.api, t.room, "skip-track");
   });
 
+  await test("unplayable songs are skipped (no preview, or the screen reports a dead link)", async () => {
+    const t = setup(["A", "B", "C"]);
+    t.act(t.H, "beginSubmit"); submitAll(t, 3);
+    t.s().subs.p0[0].preview = ""; // e.g. a bot's fallback track
+    t.act(t.H, "startRounds");
+    assert.strictEqual(t.s().phase, "playing");
+    assert.ok(t.s().round.parts[0].track.preview, "the empty one was skipped");
+    assert.strictEqual(t.s().queue.length, 3);
+    const idx = t.s().idx;
+    t.act(t.H, "audioError", { round: idx + 1 });
+    const after = t.s().idx;
+    assert.ok(after > idx || t.s().phase === "ended", "dead link reported by the screen -> next song");
+    if (t.s().phase === "playing") {
+      t.act({ seatId: "p1" }, "audioError", { round: after + 1 }); // only the host screen may report
+      assert.strictEqual(t.s().idx, after);
+    }
+  });
+
+  await test("everyone leaves -> the game ends cleanly; memory is freed at the end", async () => {
+    const t = setup(["A", "B", "C"]);
+    t.act(t.H, "beginSubmit"); submitAll(t, 3);
+    t.act(t.H, "startRounds");
+    ["p0", "p1"].forEach((id) => { t.room.players = t.room.players.filter((p) => p.seatId !== id); K.onPlayerLeave(t.api, t.room, id); });
+    assert.strictEqual(t.s().phase, "ended");
+    assert.ok(t.s().final && t.s().final.tracks.length >= 0);
+    assert.deepStrictEqual(t.s().queue, []);
+    assert.strictEqual(t.s().round, null);
+  });
+
+  await test("the reveal carries its animation length (phones wait exactly that long)", async () => {
+    const t = setup(["A", "B", "C"]);
+    t.act(t.H, "beginSubmit"); submitAll(t, 3);
+    t.act(t.H, "startRounds");
+    const o = ownerOfRound(t);
+    t.act({ seatId: ["p0", "p1", "p2"].find((x) => x !== o) }, "vote", { target: o });
+    K.onCheat(t.api, t.room, "skip-track");
+    assert.ok(t.s().result.animMs > 1000);
+  });
+
   await test("host name + avatar choice", async () => {
     const t = setup(["A", "B"]);
     t.act(t.H, "setHostName", { name: "Diddy" });
     assert.strictEqual(t.s().names.__host__, "Diddy");
+    assert.ok(Number.isInteger(t.s().avatars.p0.px), "a pixel avatar by default");
+    assert.notStrictEqual(t.s().avatars.p0.px, t.s().avatars.p1.px, "all different");
     t.act(t.P(0), "setAvatar", { emoji: "👽", color: "#F04646" });
-    assert.deepStrictEqual(t.s().avatars.p0, { emoji: "👽", color: "#F04646" });
+    assert.deepStrictEqual(t.s().avatars.p0, { emoji: "👽", color: "#F04646", px: null });
     t.act(t.P(0), "setAvatar", { emoji: "<script>", color: "red" }); // refused values
-    assert.deepStrictEqual(t.s().avatars.p0, { emoji: "👽", color: "#F04646" });
+    assert.deepStrictEqual(t.s().avatars.p0, { emoji: "👽", color: "#F04646", px: null });
+    t.act(t.P(0), "setAvatar", { px: 5 });
+    assert.strictEqual(t.s().avatars.p0.px, 5);
+    t.act(t.P(0), "setAvatar", { px: 999 }); // out of range -> ignored
+    assert.strictEqual(t.s().avatars.p0.px, 5);
   });
 
   console.log(`\n${passed} test(s) OK` + (process.exitCode ? " — DES ECHECS" : ""));

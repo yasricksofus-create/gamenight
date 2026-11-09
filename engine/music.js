@@ -17,7 +17,6 @@
 //
 // Nothing here knows about any game's rules.
 
-const { Readable } = require("stream");
 
 // Media hosts we accept for previews / covers (anything else is refused).
 const ALLOWED_HOSTS = ["dzcdn.net", "deezer.com", "mzstatic.com", "apple.com"];
@@ -53,6 +52,7 @@ function fromDeezer(t) {
     title: t.title || "?",
     artist: (t.artist && t.artist.name) || "",
     cover: (t.album && (t.album.cover_medium || t.album.cover)) || "",
+    coverSmall: (t.album && (t.album.cover_small || t.album.cover_medium)) || "", // 56 px, for lists
     preview: t.preview || "",
     link: t.link || ("https://www.deezer.com/track/" + t.id),
     explicit: !!t.explicit_lyrics,
@@ -66,6 +66,7 @@ function fromItunes(t) {
     artist: t.artistName || "",
     // iTunes gives 100x100 artwork; the same URL pattern serves bigger sizes.
     cover: (t.artworkUrl100 || "").replace("100x100bb", "250x250bb"),
+    coverSmall: (t.artworkUrl100 || "").replace("100x100bb", "60x60bb"),
     preview: t.previewUrl || "",
     link: t.trackViewUrl || "",
     explicit: t.trackExplicitness === "explicit",
@@ -83,15 +84,46 @@ async function searchItunes(q) {
   return (j.results || []).map(fromItunes).filter(usable);
 }
 
-// Deezer first; iTunes only if Deezer fails or returns nothing.
+// ---------- small in-memory caches (LRU = forget the oldest when full) ----------
+function lru(max, ttlMs) {
+  const m = new Map();
+  return {
+    get(k) {
+      const e = m.get(k);
+      if (!e) return undefined;
+      if (ttlMs && Date.now() - e.t > ttlMs) { m.delete(k); return undefined; }
+      m.delete(k); m.set(k, e); // mark as recently used
+      return e.v;
+    },
+    set(k, v) { m.delete(k); m.set(k, { v, t: Date.now() }); while (m.size > max) m.delete(m.keys().next().value); },
+  };
+}
+// Same search within 5 min (5 players clicking "Zouk") = answered from memory.
+const searchCache = lru(150, 5 * 60 * 1000);
+
+// Deezer first. If Deezer is slow (> 1.5 s), iTunes is asked IN PARALLEL and
+// the first useful answer wins (Deezer still wins if both arrive).
+async function searchFresh(q) {
+  const dz = searchDeezer(q).catch(() => []);
+  const slow = new Promise((r) => setTimeout(() => r("slow"), 1500));
+  const first = await Promise.race([dz, slow]);
+  if (first !== "slow") {
+    if (first.length) return first;
+    return searchItunes(q).catch(() => []); // Deezer answered but found nothing
+  }
+  const it = searchItunes(q).catch(() => []);
+  const [a, b] = await Promise.all([dz, it]);
+  return a.length ? a : b;
+}
 async function search(q) {
   q = String(q || "").trim().slice(0, 100);
   if (!q) return [];
-  try {
-    const r = await searchDeezer(q);
-    if (r.length) return r;
-  } catch (e) { /* fall through to iTunes */ }
-  try { return await searchItunes(q); } catch (e) { return []; }
+  const key = q.toLowerCase();
+  const hit = searchCache.get(key);
+  if (hit) return hit;
+  const r = await searchFresh(q);
+  if (r.length) searchCache.set(key, r);
+  return r;
 }
 
 // Trending tracks, cached 10 minutes (they barely change).
@@ -133,12 +165,14 @@ function sanitizeTrack(t) {
   const preview = String(t.preview || "");
   if (!isAllowedUrl(preview)) return null;
   const cover = String(t.cover || "");
+  const coverSmall = String(t.coverSmall || "");
   const link = String(t.link || "");
   return {
     id: String(t.id || "").slice(0, 40),
     title: String(t.title || "?").slice(0, 120),
     artist: String(t.artist || "").slice(0, 120),
     cover: isAllowedUrl(cover) ? cover : "",
+    coverSmall: isAllowedUrl(coverSmall) ? coverSmall : "",
     preview,
     link: isAllowedUrl(link) ? link : "",
     explicit: !!t.explicit,
@@ -189,35 +223,52 @@ function mount(app) {
   // origin: that lets the browser analyse the sound (real visualiser) without
   // the CORS restriction. Only Deezer/Apple media URLs are accepted (otherwise
   // anyone could use our server as a free proxy), and the size is capped.
+  // Last ~30 previews kept in memory (a 30 s preview is ~0.3-1 MB): replays,
+  // reconnections and the "preload next song" never re-download from Deezer.
+  const previewCache = lru(30, 30 * 60 * 1000);
+  const MAX = 4 * 1024 * 1024; // 4 MB is far above any 30 s preview
+  async function getPreview(u) {
+    const hit = previewCache.get(u);
+    if (hit) return hit;
+    const r = await fetch(u);
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (buf.length > MAX) throw new Error("too big");
+    const item = { buf, type: r.headers.get("content-type") || "audio/mpeg" };
+    previewCache.set(u, item);
+    return item;
+  }
+
+  // GET /api/music/preview?u=<preview url>
+  // Serves a preview THROUGH our server, so the host page gets it from its own
+  // origin: that lets the browser analyse the sound (real visualiser) without
+  // the CORS restriction. Only Deezer/Apple media URLs are accepted (otherwise
+  // anyone could use our server as a free proxy).
+  // "Range" = "send me only bytes X to Y": the browser asks for it to jump to a
+  // precise second (host screen reloaded mid-round). We answer it ourselves
+  // from the copy in memory (HTTP 206 = partial content).
   app.get("/api/music/preview", proxyLimit, async (req, res) => {
     const u = String(req.query.u || "");
     if (!isAllowedUrl(u) || typeof fetch !== "function") return res.status(400).end();
-    try {
-      // "Range" = "send me only the bytes from X to Y". The browser asks for it
-      // when it jumps to a precise second (e.g. the host screen reloads mid-round
-      // and must resume at 0:12). We pass it on to Deezer/Apple and send back
-      // their partial answer (HTTP 206), so seeking works through the proxy.
-      const headers = {};
-      if (req.headers.range) headers.Range = req.headers.range;
-      const r = await fetch(u, { headers });
-      if (!r.ok || !r.body) return res.status(502).end();
-      res.status(r.status === 206 ? 206 : 200);
-      res.setHeader("Content-Type", r.headers.get("content-type") || "audio/mpeg");
-      res.setHeader("Cache-Control", "public, max-age=600");
-      res.setHeader("Accept-Ranges", r.headers.get("accept-ranges") || "bytes");
-      const len = r.headers.get("content-length");
-      if (len) res.setHeader("Content-Length", len);
-      const range = r.headers.get("content-range");
-      if (range) res.setHeader("Content-Range", range);
-      let sent = 0;
-      const MAX = 4 * 1024 * 1024; // 4 MB is far above any 30s preview
-      const stream = Readable.fromWeb(r.body);
-      stream.on("data", (chunk) => { sent += chunk.length; if (sent > MAX) stream.destroy(); });
-      stream.on("error", () => res.end());
-      stream.pipe(res);
-    } catch (e) {
-      res.status(502).end();
+    let item;
+    try { item = await getPreview(u); } catch (e) { return res.status(502).end(); }
+    const total = item.buf.length;
+    res.setHeader("Content-Type", item.type);
+    res.setHeader("Cache-Control", "public, max-age=600");
+    res.setHeader("Accept-Ranges", "bytes");
+    const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ""));
+    if (m && (m[1] || m[2])) {
+      let start = m[1] ? parseInt(m[1], 10) : total - parseInt(m[2], 10);
+      let end = m[1] && m[2] ? parseInt(m[2], 10) : total - 1;
+      start = Math.max(0, start); end = Math.min(total - 1, end);
+      if (start > end) { res.setHeader("Content-Range", "bytes */" + total); return res.status(416).end(); }
+      res.status(206);
+      res.setHeader("Content-Range", `bytes ${start}-${end}/${total}`);
+      res.setHeader("Content-Length", end - start + 1);
+      return res.end(item.buf.subarray(start, end + 1));
     }
+    res.setHeader("Content-Length", total);
+    res.end(item.buf);
   });
 }
 

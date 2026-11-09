@@ -10,7 +10,7 @@ module.exports = {
   reactions: true, // live emoji reactions from the phones (engine feature)
   theme: { primary: "#8B2FE0", secondary: "#E92EC0", background: "#120a24", text: "#f3e9ff" },
   cheats: [
-    { id: "reveal-owner", label: "Reveler qui a mis", emoji: "👁️" },
+    { id: "reveal-owner", label: "Reveler qui a mis", emoji: "👁️", secret: true },
     { id: "skip-track", label: "Passer ce morceau", emoji: "⏭️" },
     { id: "add-time", label: "+15 secondes", emoji: "⏱️" },
   ],

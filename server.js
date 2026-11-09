@@ -46,7 +46,14 @@ const app = express();
 // visitor IP (needed by the per-IP anti-abuse limiter of the music service).
 app.set("trust proxy", 1);
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  // A message from a browser is never bigger than a few KB here: refuse bigger
+  // ones (default is 1 MB) so nobody can flood the server's memory.
+  maxHttpBufferSize: 64 * 1024,
+  // Compress big real-time messages (end-of-game recap, settings...). Small ones
+  // (a vote) are sent as is: compressing them would cost more than it saves.
+  perMessageDeflate: { threshold: 2048 },
+});
 
 const PORT = process.env.PORT || 3000;
 // How long a seat (or the host slot) is kept after a disconnect, in ms.
@@ -58,11 +65,12 @@ const GRACE_MS = Number(process.env.GRACE_MS) || 90000;
 app.use(require("compression")());
 
 // Browser cache. Images, sounds and fonts rarely change: the browser keeps them
-// 1 day. Code and pages (html/js/css) are always re-checked, but answered with a
-// tiny "not modified" when unchanged, so an update on Render is seen at once.
+// 1 hour (long enough for an evening, short enough that a replaced image shows
+// up quickly). Code and pages (html/js/css) are always re-checked, but answered
+// with a tiny "not modified" when unchanged, so an update is seen at once.
 function cacheHeaders(res, filePath) {
   if (/\.(png|jpe?g|gif|webp|svg|ico|mp3|wav|ogg|m4a|woff2?|ttf)$/i.test(filePath)) {
-    res.setHeader("Cache-Control", "public, max-age=86400");
+    res.setHeader("Cache-Control", "public, max-age=3600");
   } else {
     res.setHeader("Cache-Control", "no-cache");
   }
@@ -306,17 +314,23 @@ io.on("connection", (socket) => {
 
   // ---------- HOST: add a BOT (dev/solo testing) ----------
   // A bot is a seat with no socket: connected:true so it counts as a player, and
-  // isBot:true so a game module can drive it (submit/vote automatically). Lobby
-  // only. Behaviour is per-game; today only Kietkoutsa makes bots act.
+  // isBot:true so a game module can drive it (submit/vote automatically).
+  // In the lobby always; during a game only if the game accepts late arrivals
+  // (module.allowLateJoin). Kietkoutsa, Cascade and Undercover drive their bots.
   socket.on("host:addBot", () => {
     const room = rooms[socket.data.code];
-    if (!room || socket.data.role !== "host" || room.gameState) return;
+    if (!room || socket.data.role !== "host") return;
+    const module = gameModules[room.gameId];
+    const late = !!room.gameState;
+    if (late && !(module && typeof module.allowLateJoin === "function" && module.allowLateJoin(room))) return;
     if (room.players.length >= 10) return;
     const n = room.players.filter((p) => p.isBot).length + 1;
     let name = "Bot " + n;
     while (room.players.some((p) => p.name.toLowerCase() === name.toLowerCase())) name += "*";
-    room.players.push({ seatId: token(), name, socketId: null, connected: true, grace: null, isBot: true });
+    const seat = { seatId: token(), name, socketId: null, connected: true, grace: null, isBot: true };
+    room.players.push(seat);
     broadcastPlayers(room);
+    if (late && module.onPlayerJoin) module.onPlayerJoin(makeApi(room), room, seat.seatId);
     console.log(`[room ${room.code}] bot added (${room.players.length})`);
   });
 
@@ -327,15 +341,27 @@ io.on("connection", (socket) => {
     const game = getGameById(room.gameId);
     const cheat = game && game.cheats ? game.cheats.find((c) => c.id === cheatId) : null;
     if (!cheat) return;
-    io.to(room.code).emit("game:cheat", { cheat });
+    // A cheat marked `secret: true` in the game's meta.js is shown on the host
+    // screen only; the others are announced to everyone (the fun of it).
+    if (cheat.secret) socket.emit("game:cheat", { cheat });
+    else io.to(room.code).emit("game:cheat", { cheat });
     const module = gameModules[room.gameId];
     if (room.gameState && module && module.onCheat) module.onCheat(makeApi(room), room, cheatId);
   });
 
   // ---------- In-game action ----------
-  socket.on("game:action", ({ type, payload }) => {
+  socket.on("game:action", ({ type, payload } = {}) => {
     const room = rooms[socket.data.code];
     if (!room || !room.gameState) return;
+    // Anti-spam: each connection gets 15 quick actions, then 8 per second.
+    // Extra clicks are simply ignored (a normal player never reaches that).
+    const now = Date.now();
+    const b = socket.data.bucket || { tokens: 15, t: now };
+    b.tokens = Math.min(15, b.tokens + ((now - b.t) / 1000) * 8);
+    b.t = now;
+    socket.data.bucket = b;
+    if (b.tokens < 1) return;
+    b.tokens -= 1;
     const module = gameModules[room.gameId];
     if (!module || !module.handle) return;
     const actor = { isHost: socket.data.role === "host", seatId: socket.data.seatId || null };
@@ -429,6 +455,36 @@ io.on("connection", (socket) => {
       console.log(`[room ${room.code}] "${seat.name}" disconnected (grace)`);
     }
   });
+});
+
+// ---------- Health check ----------
+app.get("/healthz", (req, res) => res.type("text").send("ok"));
+
+// ---------- Stay awake during game nights (Render free plan) ----------
+// Render puts the free site to sleep after 15 min without visits; waking it takes
+// ~1 min. While at least one room exists (and 20 min after the last one), the
+// server visits its own public address every 10 min so it stays awake between
+// games. With no room, it lets itself sleep as usual (saves the free hours).
+// RENDER_EXTERNAL_URL is set automatically by Render.
+const SELF_URL = process.env.RENDER_EXTERNAL_URL || "";
+let lastRoomAt = 0;
+if (SELF_URL && typeof fetch === "function") {
+  setInterval(() => {
+    if (Object.keys(rooms).length) lastRoomAt = Date.now();
+    if (Date.now() - lastRoomAt < 20 * 60 * 1000) fetch(SELF_URL + "/healthz").catch(() => {});
+  }, 10 * 60 * 1000).unref();
+}
+
+// ---------- Restart warning ----------
+// When Render deploys an update it stops this server (signal SIGTERM). Rooms live
+// in memory, so running games are lost: we at least warn everyone, so nobody
+// thinks the game just froze.
+let stopping = false;
+process.on("SIGTERM", () => {
+  if (stopping) return;
+  stopping = true;
+  io.emit("server:restarting", { message: "Le site redemarre pour une mise a jour : la partie en cours va s'arreter. Recharge la page dans 1 minute." });
+  setTimeout(() => process.exit(0), 1500);
 });
 
 server.listen(PORT, () => console.log(`Game Night server running on http://localhost:${PORT}`));

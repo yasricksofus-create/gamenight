@@ -9,7 +9,7 @@ module.exports = {
   emoji: "🧠",
   theme: { primary: "#7c3aed", secondary: "#ec4899", background: "#1e1b4b", text: "#f5f3ff" },
   cheats: [
-    { id: "reveal", label: "Reveler la reponse", emoji: "👁️" },
+    { id: "reveal", label: "Reveler la reponse", emoji: "👁️", secret: true },
     { id: "double", label: "Double points", emoji: "✖️" },
     { id: "trap", label: "Question piege", emoji: "🪤" },
   ],

@@ -1,0 +1,19 @@
+# Runs the automated tests on GitHub at every push: if something breaks, the
+# "Actions" tab of the repository shows a red cross BEFORE you play with it.
+name: Tests
+on: [push, pull_request]
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - name: Syntax check of every JS file
+        run: for f in $(git ls-files '*.js'); do node --check "$f" || exit 1; done
+      - name: Kietkoutsa rules
+        run: node test-kietkoutsa.js
+      - name: Cascade + Undercover bots and tie revote
+        run: node test-games.js

@@ -109,6 +109,34 @@ function composition(n, wantMrWhite) {
   return { nbUnder, mrw };
 }
 
+// ---------- BOTS (dev/solo testing: a bot is a seat flagged isBot) ----------
+// Clues are said out loud, so bots only VOTE (random suspect) and, as Mr. White,
+// make a (random) guess. They act through the same actions as a human.
+function isBotSeat(room, id) { const p = (room.players || []).find((x) => x.seatId === id); return !!(p && p.isBot); }
+function scheduleBots(api, room) {
+  const s = room.gameState;
+  if (!s || !s.alive) return;
+  const act = (id, type, payload) => module.exports.handle(api, { isHost: false, seatId: id }, room, type, payload);
+  if (s.phase === "vote") {
+    const seq = s.voteSeq || 0;
+    s._botVoted = s._botVoted || {};
+    aliveIds(s).filter((id) => isBotSeat(room, id) && !s.votes[id] && s._botVoted[id] !== seq).forEach((id) => {
+      s._botVoted[id] = seq;
+      setTimeout(() => {
+        if (room.gameState !== s || s.phase !== "vote" || (s.voteSeq || 0) !== seq || s.votes[id]) return;
+        const opts = (s.tieCandidates || aliveIds(s)).filter((x) => x !== id && s.alive[x]);
+        if (opts.length) act(id, "vote", { targetId: pick(opts) });
+      }, 1200 + Math.floor(Math.random() * 2500));
+    });
+  }
+  if (s.phase === "mrwhite" && isBotSeat(room, s.mrwhiteGuessing) && s._botGuess !== s.mrwhiteGuessing) {
+    const id = s._botGuess = s.mrwhiteGuessing;
+    setTimeout(() => {
+      if (room.gameState === s && s.phase === "mrwhite" && s.mrwhiteGuessing === id) act(id, "mrwhiteGuess", { word: pick(pick(WORD_GROUPS)) });
+    }, 2500);
+  }
+}
+
 // ---------- state transitions ----------
 
 function checkWinner(state) {
@@ -134,6 +162,16 @@ function resolveVote(api, room) {
     if (n > max) { max = n; top = [id]; }
     else if (n === max) top.push(id);
   });
+
+  // Tie: ONE revote, only between the tied players. A second tie = nobody out.
+  if (top.length > 1 && max > 0 && !state.tieCandidates) {
+    state.tieCandidates = top;
+    state.votes = {};
+    state.voteSeq = (state.voteSeq || 0) + 1;
+    broadcastState(api, room);
+    return;
+  }
+  state.tieCandidates = null;
 
   if (top.length === 1 && max > 0) {
     const id = top[0];
@@ -282,6 +320,8 @@ function broadcastState(api, room) {
     order,
     aliveCount: living.length,
     votesCount: Object.keys(s.votes).length,
+    voteSeq: s.voteSeq || 0,
+    tie: s.tieCandidates ? s.tieCandidates.map((id) => ({ id, name: s.names[id] })) : null,
     votesNeeded: living.length,
     lastEliminated: s.lastEliminated,
     winner: s.winner,
@@ -298,6 +338,7 @@ function broadcastState(api, room) {
     payload.finalRoles = s.order.map((id) => ({ name: s.names[id], role: s.roles[id] }));
   }
   api.toAll("uc:state", payload);
+  scheduleBots(api, room);
 }
 
 // ---------- module (called by the engine) ----------
@@ -340,12 +381,17 @@ module.exports = {
         if (isHost && state.phase === "distribution") { state.phase = "clues"; broadcastState(api, room); }
         break;
       case "toVote":
-        if (isHost && state.phase === "clues") { state.phase = "vote"; state.votes = {}; broadcastState(api, room); }
+        if (isHost && state.phase === "clues") {
+          state.phase = "vote"; state.votes = {}; state.tieCandidates = null;
+          state.voteSeq = (state.voteSeq || 0) + 1; // phones use it to know a NEW vote started
+          broadcastState(api, room);
+        }
         break;
       case "vote": {
         if (state.phase !== "vote") break;
         const voter = me, target = payload && payload.targetId;
         if (!state.alive[voter] || !state.alive[target] || target === voter) break;
+        if (state.tieCandidates && !state.tieCandidates.includes(target)) break; // revote: tied players only
         state.votes[voter] = target;
         api.toPlayer(voter, "uc:voted", { targetId: target });
         if (aliveIds(state).every((id) => state.votes[id])) resolveVote(api, room);
@@ -419,6 +465,8 @@ module.exports = {
         break;
       case "revote":
         state.votes = {};
+        state.tieCandidates = null;
+        state.voteSeq = (state.voteSeq || 0) + 1;
         state.phase = "vote";
         broadcastState(api, room);
         break;

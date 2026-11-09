@@ -4,13 +4,13 @@
   const root = document.getElementById("game-root");
   let card = null;       // my private card (uc:you)
   let state = null;      // shared public state
-  let votedRound = -1;   // round I already voted in
+  let votedSeq = -1;     // the vote I already voted in (a revote = a new number)
   let myVote = { mode: null, mrWhite: null }; // my settings choices (local)
   const myName = new URLSearchParams(location.search).get("name"); // to read my final role
 
   socket.on("uc:you", (c) => { card = c; render(); });
   socket.on("uc:state", (s) => { state = s; if (s.themeKey) applyUcTheme(s.themeKey); render(); });
-  socket.on("uc:voted", () => { votedRound = state ? state.round : votedRound; render(); });
+  socket.on("uc:voted", () => { votedSeq = state ? state.voteSeq : votedSeq; render(); });
 
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
   function myEntry() { return state ? state.order.find((p) => p.id === window.mySeatId) : null; }
@@ -33,7 +33,7 @@
       html += `<p class="uc-wait">Ecoute, et donne ton indice a l'oral a ton tour.</p>`;
     } else if (s.phase === "vote") {
       if (!alive) html += `<p class="uc-wait">Tu es elimine — tu observes le vote.</p>`;
-      else if (votedRound === s.round) html += `<p class="uc-wait">Vote enregistre. En attente…</p>`;
+      else if (votedSeq === s.voteSeq) html += `<p class="uc-wait">Vote enregistré. En attente…</p>`;
       else html += voteButtons(s);
     } else if (s.phase === "mrwhite") {
       if (s.mrwhite && s.mrwhite.id === window.mySeatId) {
@@ -118,9 +118,11 @@
   }
 
   function voteButtons(s) {
-    const btns = s.order.filter((p) => p.alive && p.id !== window.mySeatId)
+    const tieIds = s.tie ? s.tie.map((t) => t.id) : null;
+    const btns = s.order.filter((p) => p.alive && p.id !== window.mySeatId && (!tieIds || tieIds.includes(p.id)))
       .map((p) => `<button id="vote-${p.id}" class="uc-vote-btn">${p.name}</button>`).join("");
-    return `<p class="uc-wait">Qui est l'imposteur ? Vote :</p><div class="uc-vote-list">${btns}</div>`;
+    const title = s.tie ? `Égalité ! Revote entre ${s.tie.map((t) => t.name).join(" et ")} :` : "Qui est l'imposteur ? Vote :";
+    return `<p class="uc-wait">${title}</p><div class="uc-vote-list">${btns}</div>`;
   }
 
   function afterRender(s, alive) {
@@ -134,7 +136,7 @@
       }
     }
     // Wire vote buttons
-    if (s.phase === "vote" && alive && votedRound !== s.round) {
+    if (s.phase === "vote" && alive && votedSeq !== s.voteSeq) {
       s.order.filter((p) => p.alive && p.id !== window.mySeatId).forEach((p) => {
         const b = document.getElementById("vote-" + p.id);
         if (b) b.onclick = () => send("vote", { targetId: p.id });
