@@ -104,7 +104,7 @@ function submitReady(api, s) {
 // pairs two songs of two DIFFERENT owners in each round.
 function buildQueue(s) {
   const items = [];
-  owners(s).forEach((id) => (s.subs[id] || []).forEach((t) => items.push({ owner: id, track: t })));
+  owners(s).forEach((id) => (s.subs[id] || []).forEach((t, k) => items.push({ owner: id, track: t, k })));
   let list = shuffle(items);
   for (let i = 1; i < list.length; i++) { // spread owners apart
     if (list[i].owner === list[i - 1].owner) {
@@ -112,6 +112,11 @@ function buildQueue(s) {
       if (j > 0) [list[i], list[j]] = [list[j], list[i]];
     }
   }
+  // each player's songs keep THEIR order (song 1 before song 2): the shuffle only
+  // decides whose turn it is; each owner's songs are then handed out in order
+  const mine = {};
+  owners(s).forEach((id) => (mine[id] = (s.subs[id] || []).slice()));
+  list = list.map((x) => ({ owner: x.owner, track: mine[x.owner].shift() }));
   if (s.settings.mode !== "mashup") return list.map((x) => ({ parts: [x] }));
   const rounds = [];
   const pool = list.slice();
@@ -135,6 +140,10 @@ function startRounds(api, room, force) {
   const s = room.gameState;
   if (s.phase !== "submit") return false;
   if (!force && !submitReady(api, s)) return false;
+  if (allSubs(s).length < 2) { // forcing with 0 or 1 song makes no sense
+    toast(api, HOST_SEAT, "Il faut au moins 2 sons proposés pour lancer.");
+    return "few";
+  }
   // Anyone who did not finish is simply skipped (their partial picks still count).
   const queue = buildQueue(s);
   if (!queue.length) {
@@ -256,6 +265,12 @@ function voteComplete(s, v) {
 // After any vote: maybe shorten the round if every connected voter is done.
 function afterVote(api, room) {
   const s = room.gameState;
+  const r = s.round;
+  if (r && r.spies) Object.keys(r.spies).forEach((spy) => { // live spy updates
+    const w = r.spies[spy], tv = r.votes[w.target];
+    const now = tv && tv.p[0] ? s.names[tv.p[0]] : null;
+    if (now !== w.last) { w.last = now; tell(api, spy, "kkt:spy", { name: s.names[w.target], vote: now, live: true }); }
+  });
   if (s.settings.earlyEnd) {
     const need = voters(s).filter((id) => isConnected(api, id));
     if (need.length && need.every((id) => voteComplete(s, s.round.votes[id]))) {
@@ -298,6 +313,10 @@ function endRound(api, room) {
   const duo = duoOn(s);
   const gains = {};   // id -> points won this round (before the final x2)
   const add = (id, n) => { gains[id] = (gains[id] || 0) + n; };
+  // why[id] = the explanation shown on each phone ("+1 trouvé", "×2 mise"...)
+  const why = {};
+  const say = (id, txt) => { (why[id] = why[id] || []).push(txt); };
+  const tag = (i) => (r.parts.length > 1 ? "extrait " + (i + 1) + " : " : "");
   const detGain = {}, camGain = {};
 
   // plurality per part (for the "sheep" badge)
@@ -324,14 +343,16 @@ function endRound(api, room) {
       if (choice === owner) {
         found++; foundNames.push(s.names[voter]);
         pts = duo ? 2 : 1;
+        say(voter, "+" + pts + " " + tag(i) + "trouvé");
         if (st) st.correct++;
-        const early = v.at - s.startsAt <= s.roundMs * 0.4;
-        if (s.settings.speed && early) { pts += 1; if (st) st.fast++; }
-        if (v.locked) pts += 1;
-        // confusion matrix is only about wrong picks; nothing to record here
+        // speed = when you FIRST picked the right person (changing your mind
+        // back and forth no longer costs the bonus)
+        const firstAt = (v.pickedAt && v.pickedAt[i] && v.pickedAt[i][owner]) || v.at;
+        if (s.settings.speed && firstAt - s.startsAt <= s.roundMs * 0.4) { pts += 1; say(voter, "+1 rapidité"); if (st) st.fast++; }
+        if (v.locked) { pts += 1; say(voter, "+1 « je suis sûr »"); }
       } else if (secondOk) {
         found++; foundNames.push(s.names[voter] + " (2e choix)");
-        pts = 1;
+        pts = 1; say(voter, "+1 2e choix");
       } else {
         wrong++;
         if (choice) {
@@ -342,15 +363,17 @@ function endRound(api, room) {
       }
       if (s.settings.bets) {
         const bet = v.bet || 1;
-        if (pts > 0) pts *= bet;
-        else { pts = -(bet - 1); if (st) st.betLoss += bet - 1; }
-      }
+        if (pts > 0) { if (bet > 1) say(voter, "×" + bet + " mise"); pts *= bet; }
+        else { pts = -(bet - 1); if (bet > 1) say(voter, "−" + (bet - 1) + " mise perdue"); if (st) st.betLoss += bet - 1; }
+      } else if (pts === 0) say(voter, tag(i) + "raté");
       add(voter, pts); detGain[voter] = (detGain[voter] || 0) + pts;
     });
     let ownerPts = 0;
     if (!s.left[owner]) {
       ownerPts = wrong + onTarget;
       add(owner, ownerPts); camGain[owner] = (camGain[owner] || 0) + ownerPts;
+      if (wrong) say(owner, "+" + wrong + " " + tag(i) + (wrong > 1 ? "joueurs trompés" : "joueur trompé"));
+      if (onTarget) say(owner, "+" + onTarget + " imitation réussie");
     }
     const ost = s.stats[owner];
     if (ost) { ost.ownRounds++; ost.ownFound += found; ost.ownVoters += found + wrong; }
@@ -367,13 +390,18 @@ function endRound(api, room) {
   Object.keys(r.votes).forEach((voter) => {
     const v = r.votes[voter];
     if (s.settings.mode === "truebluff" && v.nature && r.parts[0].owner !== voter && v.nature === r.parts[0].track.nature) {
-      add(voter, 1); detGain[voter] = (detGain[voter] || 0) + 1;
+      add(voter, 1); detGain[voter] = (detGain[voter] || 0) + 1; say(voter, "+1 sincère / bluff deviné");
     }
   });
   Object.keys(r.guesses).forEach((voter) => {
-    const g = r.guesses[voter];
-    const n = (g.title ? 1 : 0) + (g.artist ? 1 : 0);
-    if (n) { add(voter, n); detGain[voter] = (detGain[voter] || 0) + n; if (s.stats[voter]) s.stats[voter].blind += n; }
+    (r.guesses[voter] || []).forEach((g, i) => { // one blind-test guess per excerpt
+      if (!g) return;
+      const n = (g.title ? 1 : 0) + (g.artist ? 1 : 0);
+      if (!n) return;
+      add(voter, n); detGain[voter] = (detGain[voter] || 0) + n;
+      if (s.stats[voter]) s.stats[voter].blind += n;
+      say(voter, "+" + n + " blind test " + tag(i).replace(" : ", ""));
+    });
   });
 
   // combos (3 right rounds in a row), per voter
@@ -386,7 +414,7 @@ function endRound(api, room) {
     if (right) {
       s.streak[id] = (s.streak[id] || 0) + 1;
       const st = s.stats[id]; if (st) st.maxStreak = Math.max(st.maxStreak, s.streak[id]);
-      if (s.streak[id] % 3 === 0) { add(id, 2); detGain[id] = (detGain[id] || 0) + 2; combos.push(s.names[id]); }
+      if (s.streak[id] % 3 === 0) { add(id, 2); detGain[id] = (detGain[id] || 0) + 2; combos.push(s.names[id]); say(id, "+2 combo ×3"); }
     } else s.streak[id] = 0;
   });
 
@@ -394,8 +422,8 @@ function endRound(api, room) {
   const final = {};
   Object.keys(gains).forEach((id) => {
     let g = gains[id];
-    if (g > 0 && r.doubles[id]) g *= 2;
-    if (g > 0) g *= mult;
+    if (g > 0 && r.doubles[id]) { g *= 2; say(id, "×2 joker"); }
+    if (g > 0 && mult > 1) { g *= mult; say(id, "×2 finale"); }
     final[id] = g;
     s.scores[id] = Math.max(0, (s.scores[id] || 0) + g);
     const ratio = gains[id] ? g / gains[id] : 1;
@@ -411,7 +439,13 @@ function endRound(api, room) {
       gained: final[id] || 0,
     };
   });
-  s.result = { parts: partsOut, votes: voteList, gains: final, mult, combos, duo, doubles: Object.keys(r.doubles).map((id) => s.names[id]) };
+  s.result = { parts: partsOut, votes: voteList, gains: final, mult, combos, duo, doubles: Object.keys(r.doubles).map((id) => s.names[id]), why };
+  // round history, shown at the end ("who put what, who voted whom")
+  (s.history = s.history || []).push({
+    round: s.idx + 1,
+    parts: partsOut.map((p) => ({ title: p.track.title, artist: p.track.artist, owner: p.ownerName, found: p.found })),
+    votes: voteList.map((v) => ({ name: v.name, picks: v.picks.map((pid) => (pid ? s.names[pid] || "?" : "—")) })),
+  });
   s.phase = "reveal";
   s.revealAt = Date.now();
   s.result.animMs = revealAnimMs(voteList.length); // phones wait this long (no spoiler)
@@ -437,6 +471,7 @@ function endRound(api, room) {
 function nextRound(api, room) {
   const s = room.gameState;
   clearTimers(s);
+  s.paused = null;
   s.idx++;
   if (s.idx < s.queue.length) startRound(api, room);
   else { s.phase = "ended"; computeFinal(s); broadcast(api, room); }
@@ -516,6 +551,7 @@ function broadcast(api, room, force) {
     phase: s.phase, settings: s.settings, serverNow: Date.now(),
     mode: D.MODES[s.settings.mode], theme: s.themeText || null,
     tournament: s.tournament.games ? { games: s.tournament.games } : null,
+    paused: s.paused ? s.paused.at : 0, // the host paused the game (QoL)
   };
 
   let pub = null;
@@ -563,6 +599,7 @@ function broadcast(api, room, force) {
     const lb = leaderboard(s); // computed once
     pub = (Object.assign(base, {
       leaderboard: lb, endReason: s.endReason || null, final: s.final,
+      history: s.history || [], // round by round recap
       detBoard: lb.slice().sort((a, b) => b.det - a.det),
       camBoard: lb.slice().sort((a, b) => b.cam - a.cam),
     }));
@@ -609,7 +646,7 @@ function newState(api, room, prev, keepScores) {
     settings: prev ? Object.assign({}, prev.settings) : defaultSettings(),
     hostName: prev ? (prev.names[HOST_SEAT] || prev.hostName) : "Hôte",
     players: [], left: {}, late: {},
-    names: {}, avatars: {}, scores: {}, det: {}, cam: {}, streak: {}, jokersUsed: {}, stats: {},
+    names: {}, avatars: {}, scores: {}, det: {}, cam: {}, streak: {}, jokersUsed: {}, stats: {}, history: [],
     subs: {}, queue: [], idx: -1, round: null, roundNo: 0, result: null,
     modeVotes: {}, targets: {}, themeText: null, ratings: {}, conf: {},
     startsAt: 0, endsAt: 0, roundMs: 30000, submitEndsAt: 0, nextAt: 0,
@@ -618,13 +655,16 @@ function newState(api, room, prev, keepScores) {
   };
   const phones = api.players();
   // Default: the host plays from the shared screen only if there are too few phones.
-  if (!prev) s.settings.hostPlays = phones.length < 3;
+  if (!prev) s.settings.hostPlays = phones.length < 3 && !hostHasPhone(api);
+  if (hostHasPhone(api)) s.settings.hostPlays = false; // never twice the same person
   phones.forEach((p) => seatParticipant(s, p.id, p.name, { avatar: p.avatar }));
   if (s.settings.hostPlays) seatParticipant(s, HOST_SEAT, s.hostName, { avatar: hostAvatar(api) });
   return s;
 }
 
 const hostAvatar = (api) => (api.hostAvatar ? api.hostAvatar() : null);
+// true if one of the phones belongs to the host (opened from the host's device)
+const hostHasPhone = (api) => api.players().some((p) => p.hostDevice && !p.isBot);
 function setHostPlays(api, s, on) {
   s.settings.hostPlays = on;
   if (on) seatParticipant(s, HOST_SEAT, s.hostName, { avatar: hostAvatar(api) });
@@ -679,6 +719,33 @@ module.exports = {
     const amIn = s.players.includes(me) && !s.left[me];
     payload = payload || {};
 
+    // ----- pause / resume (host only, during a song or its reveal) -----
+    if (host && (type === "pause" || type === "resume") && (s.phase === "playing" || s.phase === "reveal")) {
+      if (type === "pause" && !s.paused) {
+        s.paused = { at: Date.now() };
+        clearTimers(s); // nothing moves while paused (bots, end of round, auto-next)
+        return broadcast(api, room);
+      }
+      if (type === "resume" && s.paused) {
+        const shift = Date.now() - s.paused.at;
+        s.paused = null;
+        if (s.phase === "playing") {
+          // shift the whole song in time: every device resumes at the same spot
+          s.startsAt += shift; s.endsAt += shift;
+          scheduleRoundTimers(api, room);
+          scheduleBotVotes(api, room);
+        } else if (s.nextAt) {
+          s.nextAt += shift; if (s.revealAt) s.revealAt += shift;
+          const roundNo = s.roundNo;
+          s.timers.reveal = setTimeout(() => {
+            if (room.gameState === s && s.phase === "reveal" && s.roundNo === roundNo && !s.paused) nextRound(api, room);
+          }, Math.max(0, s.nextAt - Date.now()));
+        }
+        return broadcast(api, room);
+      }
+      return;
+    }
+
     // ----- settings -----
     if (s.phase === "settings") {
       if (type === "voteMode" && amIn && D.MODES[payload.mode]) {
@@ -689,9 +756,21 @@ module.exports = {
         const v = cleanSetting(payload.key, payload.value);
         if (v === undefined) return;
         if (payload.key === "perPlayer" && s.settings.mode === "truebluff") return; // always 2 there
+        if (payload.key === "hostPlays" && v && hostHasPhone(api)) {
+          return toast(api, HOST_SEAT, "Tu joues déjà depuis ton téléphone : pas besoin de jouer aussi depuis l'écran.");
+        }
         if (payload.key === "hostPlays") setHostPlays(api, s, v);
         else s.settings[payload.key] = v;
         if (payload.key === "mode" && v === "truebluff") s.settings.perPlayer = 2;
+        return broadcast(api, room);
+      }
+      if (type === "loadSettings" && payload.settings && typeof payload.settings === "object") {
+        Object.keys(payload.settings).forEach((k) => {
+          if (k === "hostPlays") return; // depends on who is here today
+          const v = cleanSetting(k, payload.settings[k]);
+          if (v !== undefined) s.settings[k] = v;
+        });
+        if (s.settings.mode === "truebluff") s.settings.perPlayer = 2;
         return broadcast(api, room);
       }
       // legacy action names (kept so old clients still work)
@@ -749,6 +828,22 @@ module.exports = {
         s.subs[me] = (s.subs[me] || []).filter((x) => x.id !== payload.trackId);
         return broadcast(api, room);
       }
+      if (type === "moveTrack" && amIn) { // reorder my songs (dir -1 = up, +1 = down)
+        const l = s.subs[me] || [];
+        const i = l.findIndex((x) => x.id === payload.trackId);
+        const j = i + (payload.dir < 0 ? -1 : 1);
+        if (i >= 0 && j >= 0 && j < l.length) [l[i], l[j]] = [l[j], l[i]];
+        return broadcast(api, room);
+      }
+      if (host && type === "extendSubmit" && s.submitEndsAt) { // +30 s for the slow ones
+        clearTimeout(s.timers.submit);
+        s.submitEndsAt = Math.max(Date.now(), s.submitEndsAt) + 30000;
+        s.timers.submit = setTimeout(() => {
+          if (room.gameState === s && s.phase === "submit") startRounds(api, room, true);
+        }, s.submitEndsAt - Date.now());
+        api.toAll("kkt:toast", { msg: "⏱ +30 secondes pour choisir !" });
+        return broadcast(api, room);
+      }
       if (type === "setNote" && amIn) {
         const t = (s.subs[me] || []).find((x) => x.id === payload.trackId);
         if (t) t.note = String(payload.note || "").trim().slice(0, 120);
@@ -763,7 +858,8 @@ module.exports = {
         return broadcast(api, room);
       }
       if (host && type === "startRounds") {
-        if (!startRounds(api, room, !!payload.force)) toast(api, HOST_SEAT, "Tout le monde n'a pas fini (utilise « Forcer »).");
+        const ok = startRounds(api, room, !!payload.force);
+        if (!ok) toast(api, HOST_SEAT, "Tout le monde n'a pas fini (utilise « Forcer »).");
       }
       return;
     }
@@ -777,6 +873,17 @@ module.exports = {
         r.audioFailed = true;
         return skipUnplayable(api, room);
       }
+      // the shared screen started the sound late (slow download): give that time
+      // back, once per song, at most 8 s
+      if (type === "audioLate" && host && payload.round === s.idx + 1 && !r.lateFixed) {
+        const ms = Math.min(8000, Math.max(0, Number(payload.ms) || 0));
+        if (ms < 1000) return;
+        r.lateFixed = true;
+        s.endsAt += ms;
+        scheduleRoundTimers(api, room);
+        return broadcast(api, room);
+      }
+      if (s.paused) return; // no votes during a pause
       if (!amIn) return;
       const v = r.votes[me] = r.votes[me] || { p: [], second: null, bet: 1, at: Date.now(), locked: false, nature: null };
       if (type === "vote") {
@@ -785,7 +892,17 @@ module.exports = {
         const t = payload.target;
         if (t === me || !suspects(s, r.parts[part].owner).includes(t)) return;
         if (payload.slot === "second") { if (duoOn(s) && t !== v.p[0]) v.second = t; }
-        else { v.p[part] = t; v.at = Date.now(); if (v.second === t) v.second = null; }
+        else {
+          v.p[part] = t; v.at = Date.now(); if (v.second === t) v.second = null;
+          v.pickedAt = v.pickedAt || [{}, {}];
+          if (!v.pickedAt[part][t]) v.pickedAt[part][t] = v.at;
+        }
+        return afterVote(api, room);
+      }
+      if (type === "unvote" && !v.locked) { // take my vote back (before locking)
+        const part = payload.part === 1 ? 1 : 0;
+        v.p[part] = undefined;
+        if (part === 0) v.second = null;
         return afterVote(api, room);
       }
       if (type === "setBet" && s.settings.bets && !v.locked) {
@@ -796,12 +913,14 @@ module.exports = {
         v.nature = payload.nature === "bluff" ? "bluff" : "sincere"; return broadcastSoon(api, room);
       }
       if (type === "guess" && s.settings.blind) {
-        if (r.parts[0].owner === me) return; // no guessing your own song (the guess is about excerpt 1)
-        const g = r.guesses[me] = r.guesses[me] || { title: false, artist: false };
-        const tr = r.parts[0].track;
+        const part = payload.part === 1 && r.parts.length > 1 ? 1 : 0;
+        if (r.parts[part].owner === me) return; // no guessing your own song
+        const all = r.guesses[me] = r.guesses[me] || [];
+        const g = all[part] = all[part] || { title: false, artist: false };
+        const tr = r.parts[part].track;
         if (!g.title && payload.title && fuzzyEq(payload.title, tr.title)) g.title = true;
         if (!g.artist && payload.artist && artistMatch(payload.artist, tr.artist)) g.artist = true;
-        tell(api, me, "kkt:guessResult", g);
+        tell(api, me, "kkt:guessResult", Object.assign({ part }, g));
         return broadcast(api, room);
       }
       if (type === "joker" && s.settings.jokers) {
@@ -815,6 +934,9 @@ module.exports = {
           used.spy = true;
           const tv = r.votes[t];
           const voted = tv && tv.p[0] ? s.names[tv.p[0]] : null;
+          // the spy keeps watching: you get a new message each time they change
+          r.spies = r.spies || {};
+          r.spies[me] = { target: t, last: voted };
           tell(api, me, "kkt:spy", { name: s.names[t], vote: voted });
         } else if (kind === "scramble") {
           used.scramble = true; r.scrambled = true;
@@ -832,7 +954,7 @@ module.exports = {
         if (part && part.ownerId !== me) { rate(s, part.track, me, payload.v); broadcastSoon(api, room); }
         return;
       }
-      if (host && type === "next") nextRound(api, room);
+      if (host && type === "next") { s.paused = null; nextRound(api, room); }
       return;
     }
 
@@ -850,6 +972,7 @@ module.exports = {
     if (cheatId === "reveal-owner") {
       api.toHost("kkt:cheatReveal", { name: s.round.parts.map((p) => s.names[p.owner]).join(" + ") });
     } else if (cheatId === "skip-track") {
+      s.paused = null;
       endRound(api, room);
     } else if (cheatId === "add-time") {
       s.endsAt += 15000;
@@ -858,11 +981,17 @@ module.exports = {
     }
   },
 
-  // A player (or the host) changed their avatar in the engine's creator.
-  onAvatarChange(api, room, seatId) {
+  // A player (or the host) changed their avatar or their name in the engine.
+  onPlayerUpdate(api, room, seatId) {
     const s = room.gameState;
     if (!s || !(seatId in s.avatars)) return;
-    s.avatars[seatId] = seatId === HOST_SEAT ? hostAvatar(api) : ((api.players().find((p) => p.id === seatId) || {}).avatar || null);
+    if (seatId === HOST_SEAT) s.avatars[seatId] = hostAvatar(api);
+    else {
+      const p = api.players().find((x) => x.id === seatId) || {};
+      s.avatars[seatId] = p.avatar || null;
+      if (p.name) s.names[seatId] = p.name;
+    }
+    sendStatic(api);
     broadcastSoon(api, room);
   },
 
@@ -880,7 +1009,17 @@ module.exports = {
     s.left[seatId] = true;
     delete s.modeVotes[seatId];
     if (s.round && s.round.votes) delete s.round.votes[seatId];
-    if (s.phase === "submit") delete s.subs[seatId];
+    if (s.phase === "submit") {
+      delete s.subs[seatId];
+      // usurp: whoever had to imitate the leaver gets someone else
+      if (s.settings.mode === "usurp") Object.keys(s.targets).forEach((id) => {
+        if (id === seatId) { delete s.targets[id]; return; }
+        if (s.targets[id] !== seatId) return;
+        const others = owners(s).filter((x) => x !== id && x !== seatId);
+        if (others.length) { s.targets[id] = pick(others); toast(api, id, "🎭 Ta cible est partie : tu dois maintenant imiter " + s.names[s.targets[id]] + "."); }
+        else delete s.targets[id];
+      });
+    }
     if (s.queue.length) {
       const keep = s.queue.slice(0, s.idx + 1);
       const rest = s.queue.slice(s.idx + 1)

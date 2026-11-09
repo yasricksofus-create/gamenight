@@ -454,11 +454,13 @@ module.exports = {
     if (cheatId === "redeal") { deal(api, room); return; }
   },
 
-  // a player changed their avatar: show the new face at the table
-  onAvatarChange(api, room, seatId) {
+  // a player changed their avatar or name: show it at the table
+  onPlayerUpdate(api, room, seatId) {
     const s = room.gameState;
     if (!s || !s.avatars || !(seatId in s.avatars)) return;
-    s.avatars[seatId] = (api.players().find((p) => p.id === seatId) || {}).avatar || null;
+    const p = api.players().find((x) => x.id === seatId) || {};
+    s.avatars[seatId] = p.avatar || null;
+    if (p.name && s.names) s.names[seatId] = p.name;
     broadcast(api, room);
   },
 

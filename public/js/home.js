@@ -46,8 +46,9 @@ joinForm.addEventListener("submit", (e) => {
   }
   try { localStorage.setItem("gn_last_name", name); } catch (e) {}
   // Go to the player page, which will actually connect to the room.
+  const av = window.PixelAvatar ? "&av=" + encodeURIComponent(PixelAvatar.encode(PixelAvatar.mine())) : "";
   window.location.href =
-    `/player.html?room=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}`;
+    `/player.html?room=${encodeURIComponent(code)}&name=${encodeURIComponent(name)}` + av;
 });
 
 // 3) Arriving from a QR code (/?room=ABCD): pre-fill the code, focus the name.

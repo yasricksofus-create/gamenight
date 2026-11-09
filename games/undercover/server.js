@@ -475,9 +475,13 @@ module.exports = {
     }
   },
 
-  // a player changed their avatar: refresh the boards
-  onAvatarChange(api, room) {
-    if (room.gameState && room.gameState.order) broadcastState(api, room);
+  // a player changed their avatar or name: refresh the boards
+  onPlayerUpdate(api, room, seatId) {
+    const st = room.gameState;
+    if (!st || !st.order) return;
+    const p = api.players().find((x) => x.id === seatId);
+    if (p && p.name && st.names && seatId in st.names) st.names[seatId] = p.name;
+    broadcastState(api, room);
   },
 
   // Someone came back (a player to their seat, or the host). Resend their state.

@@ -15,7 +15,9 @@
   let built = null, audioKey = null, revealKey = null, search = null, secretSearch = false;
   let wrapped = { idx: 0, timer: null, done: false }, endTab = "score", lastPreload = "";
   kktInjectStyles();
+  kktContrast.apply();
   kktAudio.enableViz(true); // route previews through our server -> real visualiser
+  let settingsLoaded = false, lastVoted = -1, savedEvening = false;
 
   // ----- sounds (optional files in games/kietkoutsa/sounds/) -----
   const DIR = "/games/kietkoutsa/sounds/";
@@ -48,20 +50,40 @@
     requestAnimationFrame(() => { renderQueued = false; render(); });
   }
   function applyState(s) {
+    // pause: the game clock freezes and the sound stops; on resume the server
+    // sends a shifted start time, so the sound starts again at the right second
+    const wasPaused = window.kktPausedAt;
+    window.kktPausedAt = s.paused || 0;
+    if (s.paused && !wasPaused) { kktAudio.stop(); audioKey = null; }
     if (s.phase !== prevPhase) {
       phaseSound(s.phase);
       if (s.phase !== "playing") { kktAudio.stop(); audioKey = null; }
       if (s.phase !== "ended") { wrapped = { idx: 0, timer: null, done: false }; }
       closeSecret();
       prevPhase = s.phase;
+      lastVoted = -1;
     }
+    // host settings are remembered on this computer and reloaded next time
+    if (s.phase === "settings") {
+      const saved = loadSaved();
+      if (!settingsLoaded && saved) { settingsLoaded = true; send("loadSettings", { settings: saved }); }
+      else { settingsLoaded = true; try { localStorage.setItem("kkt_host_settings", JSON.stringify(s.settings)); } catch (e) {} }
+    }
+    // everybody has voted: a little "ding"
+    if (s.phase === "playing") {
+      if (s.voterCount && s.votedCount === s.voterCount && lastVoted >= 0 && lastVoted < s.voterCount) kktDing();
+      lastVoted = s.votedCount;
+    }
+    if (s.phase === "ended" && s.final && !savedEvening) { savedEvening = true; kktEvenings.save(s); }
+    if (s.phase !== "ended") savedEvening = false;
     state = s;
     renderSoon();
   }
+  function loadSaved() { try { return JSON.parse(localStorage.getItem("kkt_host_settings") || "null"); } catch (e) { return null; } }
   socket.on("kkt:you", (d) => { you = d; renderSoon(); });
   socket.on("kkt:toast", ({ msg }) => kktToast(msg));
   socket.on("kkt:cheatReveal", ({ name }) => kktToast("👁️ C'est " + name + " qui a mis ce son"));
-  socket.on("kkt:spy", ({ name, vote }) => kktToast("🕵️ " + name + (vote ? " a voté pour " + vote : " n'a pas encore voté")));
+  socket.on("kkt:spy", ({ name, vote, live }) => kktToast("🕵️ " + (live ? "Nouveau : " : "") + name + (vote ? " a voté pour " + vote : " n'a pas encore voté")));
   socket.on("kkt:guessResult", (g) => kktShowGuess(g));
 
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
@@ -77,12 +99,19 @@
     btn.id = "kkt-drawer-btn"; btn.className = "kkt-drawer-btn"; btn.title = "Console du host"; btn.textContent = "🎛️";
     const dr = document.createElement("div");
     dr.id = "kkt-drawer"; dr.className = "kkt-drawer";
-    dr.innerHTML = cheats.map((c) => `<button class="kkt-cheat" data-cheat="${kktEsc(c.id)}">${c.emoji || "✨"} ${kktEsc(c.label)}</button>`).join("") +
+    dr.innerHTML = `<button class="kkt-cheat" id="kkt-d-pause">⏸ Pause / reprendre (Espace)</button>
+      <button class="kkt-cheat" id="kkt-d-full">⛶ Plein écran (F)</button>
+      <button class="kkt-cheat" id="kkt-d-contrast">◐ Contraste élevé</button>
+      <button class="kkt-cheat" id="kkt-d-keys">⌨ Raccourcis clavier</button>` + cheats.map((c) => `<button class="kkt-cheat" data-cheat="${kktEsc(c.id)}">${c.emoji || "✨"} ${kktEsc(c.label)}</button>`).join("") +
       `<span class="kkt-small">Les cheats marchent pendant une manche.</span>` +
       // dev mode (?dev=1 or Ctrl+Shift+B): a bot can also join a running game
       (typeof devMode !== "undefined" && devMode ? `<button class="kkt-cheat" id="kkt-addbot">🤖 Ajouter un bot</button>` : "");
     btn.onclick = () => dr.classList.toggle("open");
     dr.querySelectorAll("[data-cheat]").forEach((b) => (b.onclick = () => { socket.emit("host:cheat", { cheatId: b.getAttribute("data-cheat") }); dr.classList.remove("open"); }));
+    dr.querySelector("#kkt-d-pause").onclick = () => { togglePause(); dr.classList.remove("open"); };
+    dr.querySelector("#kkt-d-full").onclick = () => { fullscreen(); dr.classList.remove("open"); };
+    dr.querySelector("#kkt-d-contrast").onclick = () => { kktToast(kktContrast.toggle() ? "Contraste élevé activé" : "Contraste normal"); };
+    dr.querySelector("#kkt-d-keys").onclick = () => { dr.classList.remove("open"); showKeys(); };
     const ab = dr.querySelector("#kkt-addbot");
     if (ab) ab.onclick = () => { socket.emit("host:addBot"); kktToast("🤖 Un bot arrive"); };
     document.body.appendChild(btn); document.body.appendChild(dr);
@@ -118,6 +147,49 @@
     window.kktChromeSync = sync;
     render();
   }
+  // ---------- pause, fullscreen, keyboard shortcuts, hidden cursor ----------
+  function togglePause() {
+    if (!state || (state.phase !== "playing" && state.phase !== "reveal")) return kktToast("La pause marche pendant une manche.");
+    send(state.paused ? "resume" : "pause");
+  }
+  function fullscreen() {
+    const d = document;
+    if (d.fullscreenElement) { if (d.exitFullscreen) d.exitFullscreen(); return; }
+    const el = d.documentElement;
+    const f = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (f) { try { f.call(el); } catch (e) {} }
+  }
+  function showKeys() {
+    kktModal("Raccourcis clavier", `<p><b>Espace</b> : pause / reprendre</p><p><b>N</b> ou <b>→</b> : manche suivante / passer</p>
+      <p><b>F</b> : plein écran</p><p><b>C</b> : contraste élevé</p><p><b>R</b> : réécouter le début du son (pendant la révélation)</p><p><b>?</b> : cette aide</p>`);
+  }
+  document.addEventListener("keydown", (e) => {
+    const t = e.target;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
+    if (e.ctrlKey || e.metaKey || e.altKey || !state || root.classList.contains("hidden")) return;
+    const k = e.key.toLowerCase();
+    if (k === " ") { e.preventDefault(); togglePause(); }
+    else if (k === "n" || k === "arrowright") { if (state.phase === "reveal") send("next"); else if (state.phase === "ended" && !wrapped.done) wrappedGo(wrapped.idx + 1); }
+    else if (k === "f") fullscreen();
+    else if (k === "c") kktToast(kktContrast.toggle() ? "Contraste élevé activé" : "Contraste normal");
+    else if (k === "r" && state.phase === "reveal") replayTen();
+    else if (k === "?") showKeys();
+  });
+  // the mouse pointer disappears after 3 s without moving (it is a TV screen)
+  let cursorT = null;
+  const wakeCursor = () => { document.body.classList.remove("kkt-nocursor"); clearTimeout(cursorT); cursorT = setTimeout(() => document.body.classList.add("kkt-nocursor"), 3000); };
+  document.addEventListener("mousemove", wakeCursor); wakeCursor();
+  // the end-of-game slideshow waits while the tab is hidden
+  document.addEventListener("visibilitychange", () => {
+    if (!state || state.phase !== "ended" || wrapped.done) return;
+    clearTimeout(wrapped.timer);
+    if (!document.hidden) wrapped.timer = setTimeout(() => wrappedGo(wrapped.idx + 1), 5500);
+  });
+  function replayTen() {
+    const p = state && state.result && state.result.parts[0];
+    if (p && p.track.preview) kktAudio.replay(p.track.preview, 10000).catch(() => {});
+  }
+
   function openSecret() {
     const sec = document.getElementById("kkt-secret");
     if (!sec) return;
@@ -127,6 +199,7 @@
   function closeSecret() {
     const sec = document.getElementById("kkt-secret");
     if (sec) sec.classList.remove("open");
+    kktAudio.stopPreview(); // a search preview must not keep playing behind
   }
   // The host's private controls (only when the host plays).
   function renderSecret() {
@@ -156,11 +229,11 @@
       });
       // blind-test inputs: built once per round so typing is never lost
       const g = document.getElementById("kkt-secret-guess");
-      const canGuess = s.settings.blind && !you.ownedParts.includes(0);
+      const canGuess = s.settings.blind && you.ownedParts.length < s.parts.length;
       const gk = s.round + "|" + canGuess;
       if (g.getAttribute("data-k") !== gk) {
         g.setAttribute("data-k", gk);
-        g.innerHTML = canGuess ? kktGuessBox(s.parts.length > 1) : "";
+        g.innerHTML = canGuess ? kktGuessBox(s.parts.length > 1, you.ownedParts) : "";
         kktWireGuess(send);
       }
       if (you.guess) kktShowGuess(you.guess);
@@ -195,6 +268,11 @@
       case "kkt-w-next": return wrappedGo(wrapped.idx + 1);
       case "kkt-w-skip": wrapped.done = true; clearTimeout(wrapped.timer); return renderEnded(state);
       case "kkt-listen": return kktAudio.resume();
+      case "kkt-pause": return togglePause();
+      case "kkt-extend": return send("extendSubmit");
+      case "kkt-howto": return kktModal("Comment jouer ?", kktHowTo(state.mode));
+      case "kkt-replay10": return replayTen();
+      case "kkt-podium": return kktPodiumImage(state.leaderboard, "Soirée du " + new Date().toLocaleDateString("fr-FR"));
     }
   });
 
@@ -215,6 +293,20 @@
     else if (s.phase === "reveal") renderReveal(s);
     else if (s.phase === "ended") renderEnded(s);
     renderSecret();
+    renderBanners(s);
+  }
+  // fixed banners above the game: pause, and who lost the connection
+  function renderBanners(s) {
+    let b = document.getElementById("kkt-banners");
+    if (!b) { b = document.createElement("div"); b.id = "kkt-banners"; b.className = "kkt-banners"; document.body.appendChild(b); }
+    const off = (s.players || []).filter((p) => p.connected === false && !p.ghost && p.id !== ME).map((p) => p.name);
+    const html = (s.paused ? `<div class="kkt-banner gold kkt-pausebar">⏸ PAUSE — <button class="kkt-btn sm" id="kkt-resume-b">Reprendre</button></div>` : "") +
+      (off.length && s.phase !== "ended" ? `<div class="kkt-banner">📵 Déconnecté(e) : ${off.map(kktEsc).join(", ")} — le jeu continue, il/elle peut revenir avec le même lien.</div>` : "");
+    if (b._h !== html) {
+      b._h = html; b.innerHTML = html;
+      const r = b.querySelector("#kkt-resume-b"); if (r) r.onclick = () => send("resume");
+    }
+    b.hidden = !html || root.classList.contains("hidden");
   }
 
   function playerChips(list, extra) {
@@ -240,13 +332,15 @@
       </div>
       <div class="kkt-card"><h2 class="kkt-h2" style="margin-top:0">Participants</h2><div id="kkt-plist" class="kkt-players"></div>
         <p class="kkt-small">Sur les téléphones : chacun choisit son avatar et vote pour un mode.</p></div>
-      <div class="kkt-row kkt-center"><button id="kkt-begin" class="kkt-btn">Commencer les propositions</button></div>
+      <div class="kkt-row kkt-center"><button id="kkt-howto" class="kkt-btn ghost">Comment jouer ?</button><button id="kkt-begin" class="kkt-btn">Commencer les propositions</button></div>
+      <div id="kkt-evenings"></div>
       <p id="kkt-begin-hint" class="kkt-sub" style="text-align:center"></p></div></div>`)) {
       const inp = document.getElementById("kkt-hostname");
       inp.value = s.hostName || "";
       const go = () => send("setHostName", { name: inp.value });
       document.getElementById("kkt-hostname-ok").onclick = go;
       inp.onkeydown = (e) => { if (e.key === "Enter") go(); };
+      kktPatch("kkt-evenings", kktEvenings.html());
     }
     const st = s.settings;
     const tallyN = Object.values(s.modeTally || {}).reduce((a, b) => a + b, 0);
@@ -290,9 +384,10 @@
       ${s.settings.mode === "usurp" ? `<div class="kkt-banner">🎭 Chacun a reçu en secret un joueur à imiter sur son téléphone.</div>` : ""}
       ${s.submitEndsAt ? `<p class="kkt-sub">Temps restant : <span class="kkt-count" data-countdown="${s.submitEndsAt}"></span></p>` : ""}
       <div id="kkt-ready" class="kkt-players center"></div>
-      <p id="kkt-sub-info" class="kkt-sub"></p>
+      <p id="kkt-sub-info" class="kkt-sub"></p><p id="kkt-wait-for" class="kkt-sub"></p>
       <div class="kkt-row kkt-center"><button id="kkt-start" class="kkt-btn">Lancer les manches</button>
-        <button id="kkt-force" class="kkt-btn ghost">Forcer le lancement</button></div></div></div>`);
+        <button id="kkt-force" class="kkt-btn ghost">Forcer le lancement</button>
+        ${s.submitEndsAt ? `<button id="kkt-extend" class="kkt-btn ghost">+30 s</button>` : ""}</div></div></div>`);
     kktPatch("kkt-ready", playerChips(s.players, (p) => {
       if (p.late || !p.owner) return { txt: "détective" };
       const ok = p.done >= s.perPlayer;
@@ -300,7 +395,10 @@
     }));
     kktPatch("kkt-sub-info", `${s.totalSubs} son(s) proposé(s)` + (s.ready ? " · tout le monde est prêt !" : ""));
     const sb = document.getElementById("kkt-start"); if (sb) sb.disabled = !s.ready;
-    const fb = document.getElementById("kkt-force"); if (fb) fb.hidden = s.ready || !s.totalSubs;
+    const fb = document.getElementById("kkt-force"); if (fb) fb.hidden = s.ready || s.totalSubs < 2;
+    // who are we waiting for?
+    const late = s.players.filter((p) => p.owner && !p.late && p.connected !== false && p.done < s.perPlayer).map((p) => p.name);
+    kktPatch("kkt-wait-for", late.length && !s.ready ? `On attend : <b>${late.map(kktEsc).join(", ")}</b>` : "");
   }
 
   // ---------- PLAYING ----------
@@ -323,7 +421,8 @@
       <p id="kkt-p-status" class="kkt-sub"></p>
       <div id="kkt-p-hint"></div><div id="kkt-p-trend"></div>
       <div id="kkt-p-players" class="kkt-players center"></div>
-      <button id="kkt-listen" class="kkt-btn ghost" hidden>▶ Lancer le son</button></div></div>`);
+      <div class="kkt-row kkt-center"><button id="kkt-listen" class="kkt-btn ghost" hidden>▶ Lancer le son</button>
+        <button id="kkt-pause" class="kkt-btn ghost sm" title="Espace">⏸ Pause</button></div></div></div>`);
     // countdown attributes may change (+15s cheat / early end) without a rebuild
     root.querySelectorAll("[data-countdown]").forEach((el) => el.setAttribute("data-countdown", s.endsAt));
     root.querySelectorAll("[data-bar-end]").forEach((el) => el.setAttribute("data-bar-end", s.endsAt));
@@ -333,10 +432,12 @@
     if (audioKey !== ak) {
       audioKey = ak;
       const round = s.round;
-      kktAudio.schedule(kktSegments(s),
+      if (!s.paused) kktAudio.schedule(kktSegments(s),
         () => { const b = document.getElementById("kkt-listen"); if (b) b.hidden = false; },
-        () => send("audioError", { round })); // dead link: the server skips this song
+        () => send("audioError", { round }), // dead link: the server skips this song
+        (ms) => send("audioLate", { round, ms })); // slow download: the server gives the time back
     }
+    const pb = document.getElementById("kkt-pause"); if (pb) pb.textContent = s.paused ? "▶ Reprendre" : "⏸ Pause";
     const byId = {}; s.players.forEach((p) => (byId[p.id] = p));
     kktPatch("kkt-p-status", `${s.votedCount}/${s.voterCount} ont voté` + (s.duo ? " · vote à 2 suspects" : "") + (s.scrambled ? " · 🌀 brouille" : ""));
     const elim = (s.eliminated || []).map((l, i) => l.map((id) => `❌ ${s.parts.length > 1 ? "Extrait " + (i + 1) + " : " : ""}ce n'est PAS ${kktEsc((byId[id] || {}).name || "?")}`).join("<br>")).filter(Boolean).join("<br>");
@@ -397,9 +498,10 @@
       return `<span class="kkt-sub">${r.parts.length > 1 ? "#" + (i + 1) + " " : ""}Note du son : <b>${s.ratings[i] > 0 ? "+" : ""}${s.ratings[i] || 0}</b> 👍/👎 (sur les téléphones)${listen}</span>`;
     }).join("") + `</div>`);
     kktPatch("kkt-lb", kktLeaderboard(s.leaderboard, null, { gains: r.gains }));
-    kktPatch("kkt-next-box", s.nextAt
+    kktPatch("kkt-next-box", (s.nextAt
       ? `<p class="kkt-sub">Manche suivante dans <span data-countdown="${s.nextAt}"></span> · <button id="kkt-next" class="kkt-btn sm ghost">Passer</button></p>`
-      : `<button id="kkt-next" class="kkt-btn">${s.last ? "Voir le classement final" : "Manche suivante"}</button>`);
+      : `<button id="kkt-next" class="kkt-btn">${s.last ? "Voir le classement final" : "Manche suivante"}</button>`) +
+      `<button id="kkt-replay10" class="kkt-btn sm ghost" title="R">↺ Réécouter 10 s</button>`);
   }
 
   // ---------- ENDED: wrapped slideshow, then the final screen ----------
@@ -451,21 +553,22 @@
       }
       return;
     }
-    const tabs = [["score", "Total"], ["det", "🕵️ Détective"], ["cam", "🦎 Caméléon"]].concat(s.tournament && s.tournament.games > 1 ? [["total", "🏆 Tournoi"]] : []);
+    const tabs = [["score", "Total"], ["det", "🕵️ Détective"], ["cam", "🦎 Caméléon"]].concat(s.tournament && s.tournament.games > 1 ? [["total", "🏆 Tournoi"]] : [], [["hist", "Manche par manche"]]);
     skeleton("ended|" + endTab, `<div class="kkt-stage"><div class="kkt-wrap kkt-wide kkt-reveal">
       <p class="kkt-eyebrow">Fin de la partie${s.tournament ? " · tournoi : " + s.tournament.games + " partie(s)" : ""}</p><h1 class="kkt-title">Classement</h1>
       ${s.endReason ? `<p class="kkt-sub">${kktEsc(s.endReason)}</p>` : ""}
       <div class="kkt-tabs">${tabs.map(([k, l]) => `<button data-tab="${k}" class="${endTab === k ? "on" : ""}">${l}</button>`).join("")}</div>
-      ${kktLeaderboard(s.leaderboard, null, { key: endTab })}
+      ${endTab === "hist" ? kktHistoryHtml(s.history) : kktLeaderboard(s.leaderboard, null, { key: endTab })}
       ${s.final.badges.length ? `<h2 class="kkt-h2">Badges</h2>${badgesHtml(s.final.badges)}` : ""}
       <h2 class="kkt-h2">Les sons de la soirée</h2>
       <div class="kkt-trk">${s.final.trackRanking.map((t, i) => `<div class="kkt-res"><span class="kkt-le rk" style="background:none;border:none;padding:0 6px 0 0">${i + 1}</span>
         <img src="${kktEsc(t.cover)}" alt="" onerror="this.style.visibility='hidden'"/>
         <div class="info"><div class="t">${kktEsc(t.title)} — +${t.points}${t.rating ? " · " + (t.rating > 0 ? "+" : "") + t.rating + "👍" : ""}</div>
         <div class="a">${kktEsc(t.artist)} · mis par ${kktEsc(t.ownerName)}</div></div>
-        ${t.link ? `<a class="kkt-mini" style="display:flex;align-items:center;justify-content:center;text-decoration:none" href="${kktEsc(t.link)}" target="_blank" rel="noopener" aria-label="Écouter">↗</a>` : ""}</div>`).join("")}</div>
+        ${kktStreamLinks(t)}</div>`).join("")}</div>
       <div class="kkt-row kkt-center" style="margin-top:16px">
         <button id="kkt-copy" class="kkt-btn ghost">📋 Copier la playlist</button>
+        <button id="kkt-podium" class="kkt-btn ghost">📸 Image du podium</button>
         <button id="kkt-replay" class="kkt-btn">Rejouer (mêmes réglages)</button>
         <button id="kkt-tourney" class="kkt-btn ghost">🏆 Partie suivante du tournoi</button></div></div></div>`);
   }

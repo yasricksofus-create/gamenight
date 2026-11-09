@@ -8,12 +8,19 @@ const { CFG } = require("./config");
 module.exports = function makeBots(ctx) {
   const { owners, voters, suspects, duoOn, isBot, allSubs, afterVote, rate, broadcast } = ctx;
 async function botTrack(api, s, i) {
-  const q = D.BOT_QUERIES[i % D.BOT_QUERIES.length];
-  try {
-    const list = await api.music.search(q);
-    const free = list.filter((t) => !(s.settings.noExplicit && t.explicit) && !allSubs(s).some((x) => sameTrack(x, t)));
-    if (free.length) return Object.assign({}, pick(free.slice(0, 6)));
-  } catch (e) {}
+  // up to 3 different genres before giving up (a search can fail or be empty)
+  for (let k = 0; k < 3; k++) {
+    const q = D.BOT_QUERIES[(i + k * 7) % D.BOT_QUERIES.length];
+    try {
+      const list = await api.music.search(q);
+      const free = list.filter((t) => !(s.settings.noExplicit && t.explicit) && !allSubs(s).some((x) => sameTrack(x, t)));
+      if (free.length) return Object.assign({}, pick(free.slice(0, 6)));
+    } catch (e) {}
+  }
+  if (!s.botWarned) { // say it once, so the host knows why a bot song is skipped
+    s.botWarned = true;
+    if (api.toHost) api.toHost("kkt:toast", { msg: "🤖 Un bot n'a pas trouvé de son (catalogue musical injoignable)." });
+  }
   return { id: "bot" + i + "_" + Date.now(), title: "Morceau du Bot " + (i + 1), artist: "Bot", cover: "", preview: "", link: "", explicit: false, source: "deezer" };
 }
 function fillBots(api, room, onlyId) {
@@ -66,9 +73,12 @@ function botVote(s, id) {
 function scheduleBotVotes(api, room) {
   const s = room.gameState;
   const roundNo = s.roundNo;
-  voters(s).filter((id) => isBot(room, id)).forEach((id) => {
-    const span = Math.max(1000, s.roundMs - 5000);
-    const delay = CFG.LEAD_MS + CFG.BOT_MIN_MS + Math.floor(Math.random() * span);
+  // after a pause, only bots who have not voted yet, within the time left
+  const left = Math.max(0, s.endsAt - Date.now());
+  const lead = Math.max(0, s.startsAt - Date.now());
+  voters(s).filter((id) => isBot(room, id) && !s.round.votes[id]).forEach((id) => {
+    const span = Math.max(1000, Math.min(s.roundMs, left - lead) - 5000);
+    const delay = lead + CFG.BOT_MIN_MS + Math.floor(Math.random() * span);
     s.botTimers.push(setTimeout(() => {
       if (room.gameState !== s || s.phase !== "playing" || s.roundNo !== roundNo) return;
       s.round.votes[id] = botVote(s, id);

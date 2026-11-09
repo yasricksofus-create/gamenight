@@ -20,13 +20,24 @@
 
 // Media hosts we accept for previews / covers (anything else is refused).
 const ALLOWED_HOSTS = ["dzcdn.net", "deezer.com", "mzstatic.com", "apple.com"];
+// If Deezer / Apple start serving previews from a NEW domain, we learn it from
+// their own (trusted) API answers instead of refusing it. Extra fixed domains
+// can also be added on Render: Environment -> MUSIC_EXTRA_HOSTS = a.com,b.net
+const LEARNED_HOSTS = new Set(String(process.env.MUSIC_EXTRA_HOSTS || "").split(",").map((x) => x.trim().toLowerCase()).filter(Boolean));
+function learnHost(u) {
+  try {
+    const h = new URL(String(u)).hostname.toLowerCase();
+    const root = h.split(".").slice(-2).join(".");
+    if (root && LEARNED_HOSTS.size < 50) LEARNED_HOSTS.add(root);
+  } catch (e) {}
+}
 
 function isAllowedUrl(u) {
   try {
     const url = new URL(String(u));
     if (url.protocol !== "https:" && url.protocol !== "http:") return false;
     const h = url.hostname.toLowerCase();
-    return ALLOWED_HOSTS.some((d) => h === d || h.endsWith("." + d));
+    return ALLOWED_HOSTS.concat([...LEARNED_HOSTS]).some((d) => h === d || h.endsWith("." + d));
   } catch (e) {
     return false;
   }
@@ -77,6 +88,7 @@ const usable = (t) => t && t.preview && isAllowedUrl(t.preview);
 
 async function searchDeezer(q) {
   const j = await getJson("https://api.deezer.com/search?limit=14&q=" + encodeURIComponent(q));
+  (j.data || []).forEach((t) => t.preview && learnHost(t.preview));
   return (j.data || []).map(fromDeezer).filter(usable);
 }
 async function searchItunes(q) {
@@ -206,7 +218,8 @@ function rateLimiter(burst, perSec) {
 // The last ~30 previews (a 30 s preview is ~0.3-1 MB). A game can "warm" the
 // next songs in advance (warm(url)): when the host screen asks for them, they
 // are already here and start instantly.
-const previewCache = lru(30, 30 * 60 * 1000);
+// 80 previews (~40 MB at most): enough for a big party (10 players x 5 songs).
+const previewCache = lru(80, 60 * 60 * 1000);
 const inflight = new Map(); // url -> download already running
 const MAX_PREVIEW = 4 * 1024 * 1024;
 function warm(u) {

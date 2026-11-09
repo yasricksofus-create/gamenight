@@ -31,27 +31,27 @@
     const alive = me ? me.alive : false;
 
     if (s.phase === "distribution") {
-      html += `<p class="uc-wait">Memorise ta carte. En attente du host…</p>`;
+      html += `<p class="uc-wait">Mémorise ta carte. En attente du host…</p>`;
     } else if (s.phase === "clues") {
-      html += `<p class="uc-wait">Ecoute, et donne ton indice a l'oral a ton tour.</p>`;
+      html += `<p class="uc-wait">Écoute, et donne ton indice à l'oral à ton tour.</p>`;
     } else if (s.phase === "vote") {
-      if (!alive) html += `<p class="uc-wait">Tu es elimine — tu observes le vote.</p>`;
+      if (!alive) html += `<p class="uc-wait">Tu es éliminé — tu observes le vote.</p>`;
       else if (votedSeq === s.voteSeq) html += `<p class="uc-wait">Vote enregistré. En attente…</p>`;
       else html += voteButtons(s);
     } else if (s.phase === "mrwhite") {
       if (s.mrwhite && s.mrwhite.id === window.mySeatId) {
-        html += `<p class="uc-wait">Tu es demasque ! Devine le mot des civils :</p>
+        html += `<p class="uc-wait">Tu es démasqué ! Devine le mot des civils :</p>
           <div class="uc-guess"><input id="uc-guess-input" placeholder="ton mot…" autocomplete="off" />
           <button id="uc-guess-btn" class="uc-btn">Proposer</button></div>`;
       } else {
-        html += `<p class="uc-wait"><strong>${s.mrwhite ? s.mrwhite.name : "?"}</strong> etait Mr. White ! Il tente de deviner le mot…</p>`;
+        html += `<p class="uc-wait"><strong>${s.mrwhite ? s.mrwhite.name : "?"}</strong> était Mr. White ! Il tente de deviner le mot…</p>`;
       }
     } else if (s.phase === "reveal") {
       if (s.mrwhiteGuessResult) {
         html += `<p class="uc-wait">Mr. White : « ${esc(s.mrwhiteGuessResult.guess)} » — ${s.mrwhiteGuessResult.correct ? "correct !" : "rate."}</p>`;
       } else {
         const e = s.lastEliminated;
-        html += `<p class="uc-wait">${e ? e.name + " est elimine (" + ucRoleLabel(e.role) + ")." : "Personne n'est elimine."}</p>`;
+        html += `<p class="uc-wait">${e ? e.name + " est éliminé (" + ucRoleLabel(e.role) + ")." : "Personne n'est éliminé."}</p>`;
       }
     } else if (s.phase === "ended") {
       // Roles are only revealed now (finalRoles). Find mine to know if I won.
@@ -79,7 +79,7 @@
         </div>`;
     }
     return `<p class="uc-eyebrow">Mise en place</p>
-      <h1 class="uc-title">Vos reglages</h1>
+      <h1 class="uc-title">Vos réglages</h1>
       <p class="uc-wait">Choisis le mode :</p>
       <div class="uc-vote-list">${modeBtns}</div>${mr}`;
   }
@@ -100,7 +100,7 @@
       return `<div class="uc-card">
         <span class="uc-stamp">Mr. White</span>
         <span class="uc-word">?</span>
-        <span class="uc-card-hint">Tu n'as pas de mot. Bluffe : ecoute et fais comme si tu savais.</span>
+        <span class="uc-card-hint">Tu n'as pas de mot. Bluffe : écoute et fais comme si tu savais.</span>
       </div>`;
     }
     if (card.kind === "character") {

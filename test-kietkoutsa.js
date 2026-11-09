@@ -49,6 +49,7 @@ async function test(name, fn) {
   catch (e) { console.log("  ✗ " + name + "\n    " + (e && e.stack || e)); process.exitCode = 1; }
 }
 function submitAll(t, n) { for (let i = 0; i < n; i++) t.act(t.P(i), "submitTrack", { track: mkTrack() }); }
+function clearTimers(t) { const s = t.s(); Object.values(s.timers || {}).forEach(clearTimeout); (s.botTimers || []).forEach(clearTimeout); }
 function ownerOfRound(t, part) { return t.s().round.parts[part || 0].owner; }
 
 (async () => {
@@ -324,7 +325,7 @@ function ownerOfRound(t, part) { return t.s().round.parts[part || 0].owner; }
     const tr = t.s().round.parts[0].track;
     const v = ["p0", "p1", "p2"].find((x) => x !== ownerOfRound(t));
     t.act({ seatId: v }, "guess", { title: tr.title.toLowerCase(), artist: "nope" });
-    assert.deepStrictEqual(t.s().round.guesses[v], { title: true, artist: false });
+    assert.deepStrictEqual(t.s().round.guesses[v][0], { title: true, artist: false });
     K.onCheat(t.api, t.room, "skip-track");
     assert.strictEqual(t.s().scores[v], 1);
   });
@@ -503,12 +504,94 @@ function ownerOfRound(t, part) { return t.s().round.parts[part || 0].owner; }
     const av = { ears: "cat", hair: "none", eyes: "big", mouth: "cat", acc: "none", cheeks: true, face: "#ff9a3c", hairc: "#1b1030", bg: "#3b1f6e", shirt: "#22e0ff", accc: "#ff2fb0", inner: "#ff8fd0" };
     t.room.players[0].avatar = av;
     t.api.players = () => t.room.players.map((p) => ({ id: p.seatId, name: p.name, avatar: p.avatar }));
-    K.onAvatarChange(t.api, t.room, "p0");
+    K.onPlayerUpdate(t.api, t.room, "p0");
     assert.deepStrictEqual(t.s().avatars.p0, av);
     t.act(t.P(0), "setAvatar", { px: 5 }); // the old in-game choice no longer exists
     assert.deepStrictEqual(t.s().avatars.p0, av);
   });
 
+
+  await test("rename: the game follows a new name (onPlayerUpdate)", async () => {
+    const t = setup(["A", "B", "C"]);
+    t.room.players[1].name = "Bobby";
+    K.onPlayerUpdate(t.api, t.room, "p1");
+    assert.strictEqual(t.s().names.p1, "Bobby");
+  });
+
+  await test("host already on a phone: cannot also play from the screen", async () => {
+    const t = setup(["A", "B"]);
+    t.api.players = () => t.room.players.map((p, i) => ({ id: p.seatId, name: p.name, hostDevice: i === 0 }));
+    K.start(t.api, t.room);
+    assert.strictEqual(t.s().settings.hostPlays, false);
+    t.act(t.H, "setSetting", { key: "hostPlays", value: true });
+    assert.strictEqual(t.s().settings.hostPlays, false);
+  });
+
+  await test("songs keep their owner's order; moveTrack swaps them", async () => {
+    const t = setup(["A", "B", "C"]);
+    t.act(t.H, "setSetting", { key: "perPlayer", value: 2 });
+    t.act(t.H, "beginSubmit");
+    const a1 = mkTrack("A un"), a2 = mkTrack("A deux");
+    t.act(t.P(0), "submitTrack", { track: a1 });
+    t.act(t.P(0), "submitTrack", { track: a2 });
+    t.act(t.P(0), "moveTrack", { trackId: a2.id, dir: -1 }); // "A deux" first now
+    assert.strictEqual(t.s().subs.p0[0].title, "A deux");
+    for (let i = 1; i < 3; i++) { t.act(t.P(i), "submitTrack", { track: mkTrack() }); t.act(t.P(i), "submitTrack", { track: mkTrack() }); }
+    t.act(t.H, "startRounds");
+    const mine = t.s().queue.map((q) => q.parts[0]).filter((p) => p.owner === "p0").map((p) => p.track.title);
+    assert.deepStrictEqual(mine, ["A deux", "A un"]);
+  });
+
+  await test("force launch refused with fewer than 2 songs; +30 s works", async () => {
+    const t = setup(["A", "B", "C"]);
+    t.act(t.H, "setSetting", { key: "submitSec", value: 60 });
+    t.act(t.H, "beginSubmit");
+    const end = t.s().submitEndsAt;
+    t.act(t.H, "extendSubmit");
+    assert.ok(t.s().submitEndsAt >= end + 29000);
+    t.act(t.P(0), "submitTrack", { track: mkTrack() });
+    t.act(t.H, "startRounds", { force: true });
+    assert.strictEqual(t.s().phase, "submit");
+    t.act(t.P(1), "submitTrack", { track: mkTrack() });
+    t.act(t.H, "startRounds", { force: true });
+    assert.strictEqual(t.s().phase, "playing");
+    clearTimeout(t.s().timers.submit);
+  });
+
+  await test("pause freezes the round, resume shifts the clock", async () => {
+    const t = setup(["A", "B", "C"]);
+    t.act(t.H, "beginSubmit"); submitAll(t, 3); t.act(t.H, "startRounds");
+    const end = t.s().endsAt;
+    t.act(t.H, "pause");
+    assert.ok(t.s().paused);
+    const v = ["p0", "p1", "p2"].find((x) => x !== ownerOfRound(t));
+    t.act({ seatId: v }, "vote", { target: ownerOfRound(t) });
+    assert.ok(!t.s().round.votes[v]); // no vote while paused
+    await wait(60);
+    t.act(t.H, "resume");
+    assert.ok(!t.s().paused);
+    assert.ok(t.s().endsAt >= end + 50);
+    clearTimers(t);
+  });
+
+  await test("unvote, points details, loadSettings, history", async () => {
+    const t = setup(["A", "B", "C"]);
+    t.act(t.H, "loadSettings", { settings: { roundSec: 15, speed: false, nope: 3, hostPlays: true } });
+    assert.strictEqual(t.s().settings.roundSec, 15);
+    assert.strictEqual(t.s().settings.hostPlays, false);
+    ["hints", "earlyEnd", "finalDouble"].forEach((k) => t.act(t.H, "setSetting", { key: k, value: false }));
+    t.act(t.H, "beginSubmit"); submitAll(t, 3); t.act(t.H, "startRounds");
+    const o = ownerOfRound(t);
+    const v = ["p0", "p1", "p2"].find((x) => x !== o);
+    t.act({ seatId: v }, "vote", { target: o });
+    t.act({ seatId: v }, "unvote", { part: 0 });
+    assert.ok(!t.s().round.votes[v].p[0]);
+    t.act({ seatId: v }, "vote", { target: o });
+    K.onCheat(t.api, t.room, "skip-track");
+    assert.ok(t.s().result.why[v].some((x) => /trouvé/.test(x)));
+    assert.strictEqual(t.s().history.length, 1);
+    clearTimers(t);
+  });
 
   console.log(`\n${passed} test(s) OK` + (process.exitCode ? " — DES ECHECS" : ""));
   setTimeout(() => process.exit(process.exitCode || 0), 50);

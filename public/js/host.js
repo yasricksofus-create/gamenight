@@ -130,7 +130,23 @@ function renderCheatConsole(game) {
 
 socket.on("game:cheat", ({ cheat }) => showCheatEffect(cheat));
 
-socket.on("room:playersUpdate", ({ players }) => renderPlayerList(players));
+let knownPlayers = null;
+socket.on("room:playersUpdate", ({ players }) => {
+  renderPlayerList(players);
+  // "👋 Léa est arrivée !" on the shared screen when someone new joins
+  const names = players.map((p) => p.name);
+  if (knownPlayers) players.filter((p) => !knownPlayers.includes(p.name) && !p.isBot).forEach((p) => welcome(p));
+  knownPlayers = names;
+});
+function welcome(p) {
+  const t = document.createElement("div");
+  t.className = "gn-welcome";
+  if (window.PixelAvatar && p.avatar) { const im = document.createElement("img"); im.src = PixelAvatar.url(p.avatar); im.className = "px-av"; im.width = im.height = 34; t.appendChild(im); }
+  t.appendChild(document.createTextNode(" 👋 " + p.name + " a rejoint la partie !"));
+  document.body.appendChild(t);
+  setTimeout(() => t.classList.add("out"), 2600);
+  setTimeout(() => t.remove(), 3200);
+}
 
 // ----- the host's own avatar (used when the host plays too) -----
 function showHostAvatar() {

@@ -22,7 +22,13 @@
           <h1 id="game-name"></h1>
         </header>
         <p class="you-are"><img id="you-avatar" class="px-av" width="44" height="44" alt=""> Connecté en tant que <strong id="you-name"></strong>
-          <button id="edit-avatar" type="button" class="avatar-edit-btn">Modifier mon avatar</button></p>
+          <button id="edit-avatar" type="button" class="avatar-edit-btn">Modifier mon avatar</button>
+          <button id="rename-btn" type="button" class="avatar-edit-btn">Changer de pseudo</button></p>
+        <form id="rename-box" class="rename-box" hidden>
+          <input id="rename-input" type="text" maxlength="16" autocomplete="off" aria-label="Nouveau pseudo" />
+          <button type="submit" class="avatar-edit-btn">OK</button>
+          <span id="rename-hint" class="hint"></span>
+        </form>
         <div class="waiting-card">
           <p>✅ Tu es dans la salle <strong id="room-code"></strong> !</p>
           <p class="subtitle">Regarde l'ecran du host. La partie va bientot commencer.</p>

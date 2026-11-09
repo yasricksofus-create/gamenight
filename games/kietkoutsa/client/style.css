@@ -209,3 +209,43 @@ body.kkt-music .kkt-eq span{animation-play-state:running}
 .kkt-px-grid button{padding:3px;border-radius:10px;border:2px solid transparent;background:rgba(255,255,255,.06);cursor:pointer;line-height:0}
 .kkt-px-grid button.on{border-color:var(--kkt-mag);box-shadow:0 0 12px rgba(255,47,176,.5)}
 .kkt-px-grid img{width:36px;height:36px;image-rendering:pixelated}
+
+/* ===== QoL additions ===== */
+/* "Chargement du son..." while the browser downloads the excerpt */
+body.kkt-audio-wait::after{content:"Chargement du son…";position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:60;
+  background:rgba(10,4,20,.9);border:2px solid var(--kkt-cyan);color:#fff;padding:8px 16px;border-radius:999px;font-weight:700;
+  animation:kkt-pulse 1s ease-in-out infinite alternate}
+@keyframes kkt-pulse{from{opacity:.55}to{opacity:1}}
+/* TV screen: the mouse pointer hides after 3 s without moving */
+body.kkt-nocursor, body.kkt-nocursor *{cursor:none !important}
+/* banners on top of the host screen (pause, disconnected players) */
+.kkt-banners{position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:55;display:flex;flex-direction:column;gap:6px;width:min(720px,calc(100% - 32px))}
+.kkt-banners .kkt-banner{margin:0;text-align:center}
+.kkt-pausebar{font-size:1.3rem}
+/* many suspects: smaller buttons so everything fits */
+.kkt-votebtns.compact{gap:6px}
+.kkt-votebtns.compact .kkt-vb{padding:6px 10px;font-size:.85rem}
+/* fingers: every tappable thing is at least 48 px high on touch screens */
+@media (pointer: coarse){
+  .kkt-vb,.kkt-btn,.kkt-chip,.kkt-toggle button,.kkt-bets button,.kkt-joker,.kkt-tabs button{min-height:48px}
+  .kkt-mini{width:48px;height:48px}
+}
+/* long titles: 2 lines max, then "..." */
+.kkt-tname{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.kkt-tart{display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
+/* "+1 trouvé, x2 mise..." under your points */
+.kkt-why{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;margin-top:8px}
+.kkt-why span{background:rgba(0,0,0,.25);border-radius:999px;padding:3px 10px;font-size:.85rem;font-weight:600}
+/* Spotify / YouTube / Deezer links */
+.kkt-link{display:flex;align-items:center;justify-content:center;text-decoration:none;font-weight:800;font-size:.8rem;color:inherit}
+/* pop-up (how to play, shortcuts) */
+.kkt-modal{position:fixed;inset:0;z-index:160;background:rgba(5,2,12,.8);display:flex;align-items:center;justify-content:center;padding:16px}
+.kkt-modal-box{max-width:560px;width:100%;max-height:90vh;overflow:auto;text-align:left}
+.kkt-howto p{margin:.4em 0}
+.kkt-hist{display:flex;flex-direction:column;gap:8px;text-align:left}
+/* high contrast: plain background, brighter text, no moving equaliser */
+body.kkt-contrast #kkt-bg{display:none}
+body.kkt-contrast{background:#000 !important;color:#fff}
+body.kkt-contrast .kkt-card,body.kkt-contrast .kkt-banner,body.kkt-contrast .kkt-vb{background:#111 !important;border-color:#fff !important;color:#fff}
+body.kkt-contrast .kkt-vb.on{background:#ffd54a !important;color:#000 !important}
+body.kkt-contrast .kkt-sub,body.kkt-contrast .kkt-small,body.kkt-contrast .kkt-eyebrow{color:#fff !important;opacity:1}

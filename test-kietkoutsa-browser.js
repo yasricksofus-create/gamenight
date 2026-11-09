@@ -158,6 +158,28 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await phones[2].p.reload();
   await phones[2].p.waitForSelector("#kkt-vp .kkt-vb", { timeout: 8000 });
   console.log("phone reload mid-round: OK");
+  // PAUSE (space bar on the host): sound stops, countdowns freeze, phones see it
+  await host.keyboard.press(" ");
+  await host.waitForSelector(".kkt-pausebar", { timeout: 4000 });
+  await phones[0].p.waitForSelector("#kkt-pause-b .kkt-banner", { timeout: 4000 });
+  const c1 = await host.textContent("[data-countdown]");
+  await wait(1600);
+  const c2 = await host.textContent("[data-countdown]");
+  const pausedPlaying = await host.evaluate(() => kktAudio.playing);
+  if (c1 !== c2 || pausedPlaying) throw new Error("pause did not freeze the round (" + c1 + " -> " + c2 + ", playing " + pausedPlaying + ")");
+  await host.click("#kkt-resume-b");
+  await wait(1500);
+  const resumed = await host.evaluate(() => kktAudio.playing);
+  console.log("pause / resume:", c1 === c2 && resumed ? "OK" : "FAIL");
+  if (!resumed) throw new Error("music did not come back after the pause");
+  // UNVOTE: tap my choice twice -> no choice any more
+  const p0 = phones[0].p;
+  await p0.waitForSelector("#kkt-vp [data-vote]:not([disabled])");
+  await p0.click("#kkt-vp [data-vote]:not([disabled]) >> nth=0");
+  await p0.waitForSelector("#kkt-vp .kkt-vb.on");
+  await p0.click("#kkt-vp .kkt-vb.on");
+  await p0.waitForFunction(() => !document.querySelector("#kkt-vp .kkt-vb.on"), null, { timeout: 4000 });
+  console.log("unvote: OK");
   // everybody votes (+ a bet + a reaction)
   for (const ph of phones.concat([{ name: "Max", p: late }])) {
     await ph.p.waitForSelector("#kkt-vp [data-vote]:not([disabled])");
@@ -197,6 +219,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await host.screenshot({ path: path.join(SHOTS, "5-host-wrapped.png") });
   await host.click("#kkt-w-skip");
   await wait(300);
+  if (!(await host.$("#kkt-podium"))) throw new Error("no podium button");
+  await host.click("[data-tab='hist']");
+  await host.waitForSelector(".kkt-hist .kkt-card");
+  await host.click("[data-tab='score']");
+  console.log("end screen: podium + round history OK");
   await host.screenshot({ path: path.join(SHOTS, "6-host-ended.png"), fullPage: true });
   await phones[0].p.screenshot({ path: path.join(SHOTS, "6-phone-ended.png"), fullPage: true });
   await host.click("#kkt-tourney");

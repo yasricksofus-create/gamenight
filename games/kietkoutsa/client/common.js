@@ -46,7 +46,48 @@
     TOAST_MS: 2600,
   };
 
-  window.kktNow = function () { return window.ServerClock ? ServerClock.now() : Date.now(); };
+  // Server time. During a pause the game clock is FROZEN at the pause moment, so
+  // countdowns and progress bars stop instead of running down.
+  window.kktPausedAt = 0;
+  window.kktNow = function () {
+    if (window.kktPausedAt) return window.kktPausedAt;
+    return window.ServerClock ? ServerClock.now() : Date.now();
+  };
+  const realNow = () => (window.ServerClock ? ServerClock.now() : Date.now());
+
+  // Phone vibration (ignored by computers and iPhones, which cannot vibrate).
+  window.kktBuzz = function (pattern) {
+    try { if (navigator.vibrate && !document.hidden) navigator.vibrate(pattern || 60); } catch (e) {}
+  };
+  // Short synthesised "ding" (used when everybody has voted).
+  window.kktDing = function () {
+    try {
+      const ctx = kktAudioCtx();
+      if (!ctx) return;
+      if (ctx.state === "suspended") ctx.resume();
+      const master = (window.Sound && Sound.getMaster) ? Sound.getMaster() : 0.5;
+      [880, 1320].forEach((f, i) => {
+        const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.12;
+        o.frequency.value = f; o.type = "triangle";
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.25 * master, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + 0.35);
+        o.connect(g); g.connect(ctx.destination); o.start(t); o.stop(t + 0.4);
+      });
+    } catch (e) {}
+  };
+
+  // High-contrast mode (remembered on this device): plain dark background,
+  // brighter text, no moving equaliser. Good for projectors and sunlight.
+  window.kktContrast = {
+    get on() { try { return localStorage.getItem("kkt_contrast") === "1"; } catch (e) { return false; } },
+    toggle() {
+      const v = !this.on;
+      try { localStorage.setItem("kkt_contrast", v ? "1" : "0"); } catch (e) {}
+      document.body.classList.toggle("kkt-contrast", v);
+      return v;
+    },
+    apply() { document.body.classList.toggle("kkt-contrast", this.on); },
+  };
 
   // ---------- one shared Web Audio engine (visualiser + drum roll) ----------
   window.kktAudioCtx = function () {
@@ -68,8 +109,10 @@
   // The search "preview" button uses its OWN player, so it never cuts a round.
   window.kktAudio = (function () {
     const els = {};
-    let timers = [], segs = [], useViz = false, current = null, onBlocked = null, onFailed = null, cache = [];
+    let timers = [], segs = [], useViz = false, current = null, onBlocked = null, onFailed = null, onLate = null, lateSent = false, cache = [];
     function musicFlag() { document.body.classList.toggle("kkt-music", !!(current && !current.paused)); }
+    // "Chargement du son…" badge while the browser is still downloading
+    function loading(on) { document.body.classList.toggle("kkt-audio-wait", !!on); }
     function el(kind) {
       if (!els[kind]) {
         const a = new Audio();
@@ -77,6 +120,15 @@
         if (kind === "viz") a.crossOrigin = "anonymous";
         if (window.Sound && Sound.attachExternal) Sound.attachExternal(a); else a.volume = 0.8;
         ["play", "pause", "ended"].forEach((ev) => a.addEventListener(ev, musicFlag));
+        a.addEventListener("waiting", () => { if (segs.length && current === a) loading(true); });
+        a.addEventListener("playing", () => {
+          loading(false);
+          // started late (slow download)? tell the game once, it can add the time back
+          const seg = segs.find((x) => a._src && a._src.indexOf(encodeURIComponent(x.url)) >= 0 || a._src === x.url);
+          if (!seg || lateSent || !onLate) return;
+          const lateMs = (realNow() - seg.at) - a.currentTime * 1000;
+          if (lateMs > 1500) { lateSent = true; onLate(Math.round(lateMs)); }
+        });
         if (kind === "viz") a.addEventListener("error", () => { // proxy failed -> direct link
           if (!useViz || !a._src) return;
           useViz = false;
@@ -106,6 +158,7 @@
       current = a;
       const src = srcOf(seg.url, viz);
       if (a._src !== src) { a.src = src; a._src = src; }
+      if (a.readyState < 3) loading(true);
       if (a.readyState >= 1) seekTo(a, seg);
       else a.addEventListener("loadedmetadata", () => seekTo(a, seg), { once: true });
       if (viz && window.kktViz) kktViz.attach(a);
@@ -118,8 +171,16 @@
     return {
       enableViz(on) { useViz = !!on; },
       // segs: [{url, at, dur}] ; blocked: browser refused autoplay ; failed: dead link
-      schedule(list, blocked, failed) {
-        clear(); segs = list || []; onBlocked = blocked || null; onFailed = failed || null;
+      // late(ms): the sound really started `ms` too late (host screen only)
+      schedule(list, blocked, failed, late) {
+        clear(); segs = list || []; onBlocked = blocked || null; onFailed = failed || null; onLate = late || null; lateSent = false;
+        // the clock is not calibrated yet (page just opened): wait a moment, else
+        // the song could start at the wrong second
+        if (window.ServerClock && !ServerClock.ready) {
+          const mine = segs;
+          timers.push(setTimeout(() => { if (segs === mine) this.schedule(mine, blocked, failed, late); }, 400));
+          return;
+        }
         const now = kktNow();
         segs.forEach((seg, i) => {
           if (now >= seg.at + seg.dur) return;
@@ -151,11 +212,29 @@
           if (cache.length > 4) { const old = cache.shift(); old.removeAttribute("src"); try { old.load(); } catch (e) {} }
         });
       },
-      stop() { clear(); segs = []; onFailed = null; Object.values(els).forEach((a) => { try { a.pause(); } catch (e) {} }); musicFlag(); if (window.kktViz) kktViz.idle(); },
+      stop() { clear(); segs = []; onFailed = null; onLate = null; loading(false); Object.values(els).forEach((a) => { try { a.pause(); } catch (e) {} }); musicFlag(); if (window.kktViz) kktViz.idle(); },
+      // "Réécouter 10 s": the start of a song again, on the search player
+      replay(url, ms) {
+        const a = el("search");
+        if (a._src !== url) { a.src = url; a._src = url; }
+        try { a.currentTime = 0; } catch (e) {}
+        clearTimeout(a._stopT);
+        a._stopT = setTimeout(() => { try { a.pause(); } catch (e) {} }, ms || 10000);
+        return a.play() || Promise.resolve();
+      },
+      // phone came back from sleep / another app: the round sound must go on
+      wake() {
+        if (!segs.length || window.kktPausedAt) return;
+        const s = segs.find((x) => kktNow() < x.at + x.dur);
+        if (s && (!current || current.paused)) play(s);
+        else if (s && current) seekTo(current, s);
+      },
       get playing() { return !!(current && !current.paused); },
       get time() { return current ? current.currentTime : 0; }, // seconds into the excerpt
     };
   })();
+
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) kktAudio.wake(); });
 
   // ---------- real visualiser (host screen only) ----------
   // Web Audio "AnalyserNode" = reads the frequencies of what is playing; we use
@@ -281,7 +360,8 @@
   window.kktVoteButtons = function (o) {
     const byId = {};
     (o.players || []).forEach((p) => (byId[p.id] = p));
-    return `<div class="kkt-votebtns">` + (o.suspects || []).filter((id) => id !== o.me && byId[id]).map((id) => {
+    const list = (o.suspects || []).filter((id) => id !== o.me && byId[id]);
+    return `<div class="kkt-votebtns ${list.length > 6 ? "compact" : ""}">` + list.map((id) => {
       const p = byId[id];
       const out = (o.eliminated || []).includes(id);
       const cls = [o.choice === id ? "on" : "", o.second === id ? "second" : "", out ? "out" : ""].join(" ");
@@ -322,6 +402,7 @@
         `</div><div class="kkt-small">Juste = points × mise. Faux = tu perds mise − 1.</div></div>`;
     }
     const complete = s.parts.every((_, i) => v.p[i]);
+    if (!locked && s.parts.some((_, i) => v.p[i])) h += `<p class="kkt-small" style="text-align:center">Touche à nouveau ton choix pour l'annuler.</p>`;
     h += `<div class="kkt-row kkt-center" style="margin-top:8px">` + (locked
       ? `<span class="kkt-voted">🔒 Vote verrouillé (+1 si juste)</span>`
       : `<button class="kkt-btn ghost sm" data-lock ${complete ? "" : "disabled"}>🔒 Je suis sûr (+1)</button>`) + `</div>`;
@@ -337,8 +418,13 @@
   };
   // Hooks the buttons of kktVotePanel to actions.
   window.kktWireVotePanel = function (root, s, you, me, send) {
-    root.querySelectorAll("[data-vote]").forEach((b) => (b.onclick = () =>
-      send("vote", { target: b.getAttribute("data-vote"), part: +b.getAttribute("data-part"), slot: b.getAttribute("data-slot") })));
+    root.querySelectorAll("[data-vote]").forEach((b) => (b.onclick = () => {
+      const part = +b.getAttribute("data-part"), slot = b.getAttribute("data-slot");
+      // tapping my current choice again cancels it
+      if (slot === "first" && b.classList.contains("on")) return send("unvote", { part });
+      kktBuzz(25);
+      send("vote", { target: b.getAttribute("data-vote"), part, slot });
+    }));
     root.querySelectorAll("[data-nature]").forEach((b) => (b.onclick = () => send("setNature", { nature: b.getAttribute("data-nature") })));
     root.querySelectorAll("[data-bet]").forEach((b) => (b.onclick = () => send("setBet", { bet: +b.getAttribute("data-bet") })));
     const lk = root.querySelector("[data-lock]"); if (lk) lk.onclick = () => send("lock");
@@ -354,8 +440,15 @@
   };
 
   // Blind-test guess inputs (kept OUT of patched blocks so typing is never lost).
-  window.kktGuessBox = function (multi) {
-    return `<div class="kkt-block" id="kkt-guess"><h4>Blind test${multi ? " (extrait 1)" : ""} : trouve le titre / l'artiste (+1 chacun)</h4>
+  // multi = two excerpts (Mashup): a switch chooses which one you are guessing.
+  // mine = the excerpts that are MY songs (no guessing those).
+  let guessPart = 0, guesses = [];
+  window.kktGuessBox = function (multi, mine) {
+    mine = mine || [];
+    guessPart = mine.includes(0) && multi ? 1 : 0; guesses = [];
+    const sw = multi ? `<div class="kkt-toggle" id="kkt-g-parts">${[0, 1].map((i) =>
+      `<button data-gpart="${i}" class="${i === guessPart ? "on" : ""}" ${mine.includes(i) ? "disabled" : ""}>Extrait ${i + 1}</button>`).join("")}</div>` : "";
+    return `<div class="kkt-block" id="kkt-guess"><h4>Blind test : trouve le titre / l'artiste (+1 chacun)</h4>${sw}
       <div class="kkt-row kkt-center"><input class="kkt-input" id="kkt-g-title" placeholder="Titre" autocomplete="off"/>
       <input class="kkt-input" id="kkt-g-artist" placeholder="Artiste" autocomplete="off"/>
       <button class="kkt-btn sm" id="kkt-g-send">Valider</button></div><p class="kkt-small" id="kkt-g-res"></p></div>`;
@@ -363,13 +456,24 @@
   window.kktWireGuess = function (send) {
     const b = document.getElementById("kkt-g-send");
     if (!b) return;
-    const go = () => send("guess", { title: document.getElementById("kkt-g-title").value, artist: document.getElementById("kkt-g-artist").value });
+    const go = () => send("guess", { part: guessPart, title: document.getElementById("kkt-g-title").value, artist: document.getElementById("kkt-g-artist").value });
     b.onclick = go;
+    document.querySelectorAll("[data-gpart]").forEach((x) => (x.onclick = () => {
+      guessPart = +x.getAttribute("data-gpart");
+      document.querySelectorAll("[data-gpart]").forEach((y) => y.classList.toggle("on", y === x));
+      ["title", "artist"].forEach((k) => { const i = document.getElementById("kkt-g-" + k); if (i) { i.value = ""; i.disabled = false; } });
+      kktShowGuess(guesses);
+    }));
     ["kkt-g-title", "kkt-g-artist"].forEach((id) => { const i = document.getElementById(id); if (i) i.onkeydown = (e) => { if (e.key === "Enter") go(); }; });
   };
+  // g = the list of my guesses (one per excerpt) or one result {part, title, artist}
   window.kktShowGuess = function (g) {
+    if (!g) return;
+    if (Array.isArray(g)) guesses = g.slice();
+    else { guesses[g.part || 0] = g; }
+    g = guesses[guessPart] || { title: false, artist: false };
     const el = document.getElementById("kkt-g-res");
-    if (!el || !g) return;
+    if (!el) return;
     el.textContent = (g.title ? "✅ Titre trouvé " : "Titre : pas encore ") + " · " + (g.artist ? "✅ Artiste trouvé" : "Artiste : pas encore");
     ["title", "artist"].forEach((k) => { const i = document.getElementById("kkt-g-" + k); if (i && g[k]) i.disabled = true; });
   };
@@ -379,7 +483,9 @@
     opts = opts || {};
     const key = opts.key || "score";
     const list = lead.slice().sort((a, b) => (b[key] || 0) - (a[key] || 0));
-    return `<div class="kkt-lead">` + list.map((l, i) => {
+    return `<div class="kkt-lead">` + list.map((l) => {
+      // same score = same rank (two players at 12 are both 1st, the next is 3rd)
+      const i = list.filter((x) => (x[key] || 0) > (l[key] || 0)).length;
       const g = opts.gains && opts.gains[l.id];
       const gain = g ? `<span class="gain ${g < 0 ? "neg" : ""}">${g > 0 ? "+" : ""}${g}</span>` : "";
       return `<div class="kkt-le ${l.id === me ? "top" : ""}"><span class="rk">${i + 1}</span>${kktAvatar(l.avatar, 28)}
@@ -428,7 +534,7 @@
   window.KktSearch = function (el, send) {
     let timer = null, seq = 0, list = [], you = { subs: [], perPlayer: 1 }, st = null, mineSig = "";
     el.innerHTML = `<input class="kkt-search" placeholder="Rechercher un titre, un artiste…" autocomplete="off"/>
-      <div class="kkt-chips">${GENRES.map(([l, q]) => `<button class="kkt-chip" data-q="${kktEsc(q)}">${l}</button>`).join("")}</div>
+      <div class="kkt-chips"><button class="kkt-chip" data-random>🎲 Un son au hasard</button>${GENRES.map(([l, q]) => `<button class="kkt-chip" data-q="${kktEsc(q)}">${l}</button>`).join("")}</div>
       <div class="kkt-results"></div>
       <h3 class="kkt-h2">Mes morceaux <span class="kkt-pickc"></span></h3>
       <div class="kkt-mine"></div>`;
@@ -452,6 +558,22 @@
       if (v === "@charts") return load("/api/music/charts");
       q.value = ""; doSearch(v);
     }));
+
+    // "Un son au hasard": a random genre, then a random free song from it
+    el.querySelector("[data-random]").onclick = () => {
+      if (full()) return kktToast("Tu as déjà tous tes sons.");
+      const pool = GENRES.filter(([, x]) => x[0] !== "@");
+      const g = pool[Math.floor(Math.random() * pool.length)];
+      results.innerHTML = `<p class="kkt-sub">Je cherche dans « ${kktEsc(g[0])} »…</p>`;
+      fetch("/api/music/search?q=" + encodeURIComponent(g[1])).then((r) => r.json()).then((d) => {
+        const ok = (d.results || []).filter((t) => !(noExplicit() && t.explicit));
+        if (!ok.length) { results.innerHTML = `<p class="kkt-sub">Rien trouvé, réessaie.</p>`; return; }
+        show(ok, "");
+        const t = ok[Math.floor(Math.random() * Math.min(8, ok.length))];
+        remember(t); send("submitTrack", { track: t });
+        kktToast("🎲 " + t.title + " — tu peux le retirer avec ✕");
+      }).catch(() => { results.innerHTML = `<p class="kkt-sub">Recherche indisponible.</p>`; });
+    };
 
     let ctl = null;
     const memo = new Map(); // searches already done on this phone (5 min)
@@ -493,15 +615,19 @@
       if (sig !== mineSig) {
         const focused = document.activeElement && document.activeElement.getAttribute("data-note");
         mineSig = sig;
-        mine.innerHTML = you.subs.length ? you.subs.map((t) =>
+        const many = you.subs.length > 1;
+        mine.innerHTML = (many ? `<p class="kkt-small">Tes sons passent dans cet ordre (▲▼ pour changer).</p>` : "") + (you.subs.length ? you.subs.map((t, k) =>
           `<div class="kkt-res"><img src="${kktEsc(t.cover)}" alt="" onerror="this.style.visibility='hidden'"/>
-            <div class="info"><div class="t">${kktEsc(t.title)}</div><div class="a">${kktEsc(t.artist)}</div></div>
+            <div class="info"><div class="t">${many ? (k + 1) + ". " : ""}${kktEsc(t.title)}</div><div class="a">${kktEsc(t.artist)}</div></div>
+            ${many ? `<button class="kkt-mini" data-mv="-1" data-id="${kktEsc(t.id)}" aria-label="Monter" ${k === 0 ? "disabled" : ""}>▲</button>
+              <button class="kkt-mini" data-mv="1" data-id="${kktEsc(t.id)}" aria-label="Descendre" ${k === you.subs.length - 1 ? "disabled" : ""}>▼</button>` : ""}
             <button class="kkt-mini" data-prevm="${kktEsc(t.preview)}" aria-label="Écouter">▶</button>
             <button class="kkt-mini" data-rm="${kktEsc(t.id)}" aria-label="Retirer">✕</button>
             ${tb ? `<div class="kkt-toggle" style="flex:1 1 100%"><button data-nat="sincere" data-id="${kktEsc(t.id)}" class="${t.nature === "sincere" ? "on" : ""}">💖 Sincère</button>
               <button data-nat="bluff" data-id="${kktEsc(t.id)}" class="${t.nature === "bluff" ? "on" : ""}">🃏 Bluff</button></div>` : ""}
             <div class="note"><input class="kkt-input" data-note="${kktEsc(t.id)}" maxlength="120" placeholder="Message caché (révélé à la fin de la manche)" value="${kktEsc(t.note || "")}"/></div></div>`).join("")
-          : `<p class="kkt-sub">Rien encore.</p>`;
+          : `<p class="kkt-sub">Rien encore.</p>`);
+        mine.querySelectorAll("[data-mv]").forEach((b) => (b.onclick = () => send("moveTrack", { trackId: b.getAttribute("data-id"), dir: +b.getAttribute("data-mv") })));
         mine.querySelectorAll("[data-prevm]").forEach((b) => (b.onclick = () => kktAudio.preview(b.getAttribute("data-prevm")).catch(() => {})));
         mine.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => send("removeTrack", { trackId: b.getAttribute("data-rm") })));
         mine.querySelectorAll("[data-nat]").forEach((b) => (b.onclick = () => send("setNature", { trackId: b.getAttribute("data-id"), nature: b.getAttribute("data-nat") })));
@@ -516,6 +642,101 @@
       results.querySelectorAll("[data-pick]").forEach((b) => (b.disabled = full()));
     }
     return { update };
+  };
+
+  // Links to find a song on other apps (no account / API needed: search pages).
+  window.kktStreamLinks = function (t) {
+    const q = encodeURIComponent((t.title || "") + " " + (t.artist || ""));
+    return `<a class="kkt-mini kkt-link" href="https://open.spotify.com/search/${q}" target="_blank" rel="noopener" aria-label="Chercher sur Spotify" title="Spotify">S</a>
+      <a class="kkt-mini kkt-link" href="https://www.youtube.com/results?search_query=${q}" target="_blank" rel="noopener" aria-label="Chercher sur YouTube" title="YouTube">YT</a>` +
+      (t.link ? `<a class="kkt-mini kkt-link" href="${kktEsc(t.link)}" target="_blank" rel="noopener" aria-label="Écouter" title="Deezer / Apple">↗</a>` : "");
+  };
+
+  // Podium picture (top 3 with avatars), drawn in a canvas, downloaded as PNG.
+  window.kktPodiumImage = function (lead, title) {
+    const W = 1080, H = 1080, c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const g = c.getContext("2d");
+    const bg = g.createLinearGradient(0, 0, W, H); bg.addColorStop(0, "#1a0b33"); bg.addColorStop(1, "#05020c");
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    g.fillStyle = "#ff2fb0"; g.font = "bold 76px sans-serif"; g.textAlign = "center";
+    g.fillText("KIETKOUTSA REBORN", W / 2, 120);
+    g.fillStyle = "#cbb8ff"; g.font = "36px sans-serif";
+    g.fillText(title || new Date().toLocaleDateString("fr-FR"), W / 2, 180);
+    const top = lead.slice().sort((a, b) => b.score - a.score).slice(0, 3);
+    const spots = [[W / 2, 470, 300, "#ffd54a"], [W / 2 - 330, 560, 230, "#d9d9e8"], [W / 2 + 330, 610, 200, "#e09a5a"]];
+    const loads = top.map((l, i) => new Promise((res) => {
+      const [x, y, size, col] = spots[i];
+      const img = new Image();
+      img.onload = img.onerror = () => {
+        g.fillStyle = col; g.beginPath(); g.arc(x, y, size / 2 + 10, 0, Math.PI * 2); g.fill();
+        g.save(); g.beginPath(); g.arc(x, y, size / 2, 0, Math.PI * 2); g.clip();
+        g.imageSmoothingEnabled = false;
+        try { g.drawImage(img, x - size / 2, y - size / 2, size, size); } catch (e) {}
+        g.restore();
+        g.fillStyle = "#fff"; g.font = "bold 46px sans-serif";
+        g.fillText((i + 1) + ". " + l.name, x, y + size / 2 + 70);
+        g.fillStyle = col; g.font = "40px sans-serif";
+        g.fillText(l.score + " pts", x, y + size / 2 + 120);
+        res();
+      };
+      img.src = window.PixelAvatar ? PixelAvatar.url(l.avatar || PixelAvatar.presets[0].parts) : "";
+    }));
+    Promise.all(loads).then(() => {
+      const a = document.createElement("a");
+      a.download = "podium-kietkoutsa.png";
+      a.href = c.toDataURL("image/png");
+      document.body.appendChild(a); a.click(); a.remove();
+      kktToast("Image du podium téléchargée");
+    });
+  };
+
+  // "Mes soirées": a short summary of each finished game, kept on this device.
+  window.kktEvenings = {
+    list() { try { return JSON.parse(localStorage.getItem("kkt_evenings") || "[]"); } catch (e) { return []; } },
+    save(s) {
+      if (!s || !s.final || !s.leaderboard || !s.leaderboard.length) return;
+      try {
+        const id = (s.final.tracks || []).map((t) => t.title).join("|").slice(0, 200);
+        const l = this.list().filter((x) => x.id !== id);
+        const top = s.leaderboard.slice().sort((a, b) => b.score - a.score);
+        l.unshift({ id, at: Date.now(), winner: top[0].name, players: top.length, songs: (s.final.tracks || []).length,
+          best: s.final.trackRanking && s.final.trackRanking[0] ? s.final.trackRanking[0].title : "" });
+        localStorage.setItem("kkt_evenings", JSON.stringify(l.slice(0, 10)));
+      } catch (e) {}
+    },
+    html() {
+      const l = this.list();
+      if (!l.length) return "";
+      return `<div class="kkt-card"><h2 class="kkt-h2" style="margin-top:0">Mes dernières soirées</h2>` + l.slice(0, 5).map((x) =>
+        `<p class="kkt-small">${new Date(x.at).toLocaleDateString("fr-FR")} · 🏆 ${kktEsc(x.winner)} · ${x.players} joueurs · ${x.songs} sons${x.best ? " · top : " + kktEsc(x.best) : ""}</p>`).join("") + `</div>`;
+    },
+  };
+
+  // Round by round recap (end of the game).
+  window.kktHistoryHtml = function (hist) {
+    if (!hist || !hist.length) return `<p class="kkt-sub">Pas d'historique.</p>`;
+    return `<div class="kkt-hist">` + hist.map((h) => `<div class="kkt-card"><p class="kkt-eyebrow">Manche ${h.round}</p>` +
+      h.parts.map((p) => `<div><b>${kktEsc(p.title)}</b> — ${kktEsc(p.artist)} · mis par <b>${kktEsc(p.owner)}</b> (${p.found} l'ont trouvé)</div>`).join("") +
+      `<p class="kkt-small">${h.votes.map((v) => kktEsc(v.name) + " → " + v.picks.map(kktEsc).join(" / ")).join(" · ") || "Aucun vote"}</p></div>`).join("") + `</div>`;
+  };
+
+  // How to play (shown before the game, and to late arrivals).
+  window.kktHowTo = function (mode) {
+    return `<div class="kkt-howto">
+      <p><b>1.</b> Chacun choisit en secret un ou plusieurs sons sur son téléphone.</p>
+      <p><b>2.</b> Les sons passent un par un sur l'écran partagé.</p>
+      <p><b>3.</b> Tout le monde vote : <b>qui a mis ce son ?</b> (même le propriétaire, pour ne pas se trahir).</p>
+      <p><b>4.</b> +1 si tu trouves, bonus si tu es rapide ou sûr de toi. Le propriétaire gagne 1 point par personne trompée.</p>
+      ${mode ? `<p><b>Mode ${kktEsc(mode.label)} :</b> ${kktEsc(mode.rule)}</p>` : ""}</div>`;
+  };
+  window.kktModal = function (title, html) {
+    const m = document.createElement("div");
+    m.className = "kkt-modal";
+    m.innerHTML = `<div class="kkt-card kkt-modal-box" role="dialog" aria-modal="true"><h2 class="kkt-h2" style="margin-top:0">${kktEsc(title)}</h2>${html}
+      <div class="kkt-row kkt-center"><button class="kkt-btn" data-close>OK</button></div></div>`;
+    m.onclick = (e) => { if (e.target === m || e.target.hasAttribute("data-close")) m.remove(); };
+    document.body.appendChild(m);
   };
 
   // Text version of the evening's playlist (to copy / share).

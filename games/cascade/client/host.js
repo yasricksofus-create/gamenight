@@ -91,7 +91,7 @@
   const RULES = [
     { key: "cumul", name: "Cumul des pioches", desc: "Empiler +2 sur +2 (ou +4 sur +4) pour renvoyer la pioche au suivant." },
     { key: "jumpin", name: "Jump-in", desc: "Jouer hors de son tour une carte STRICTEMENT identique au dessus." },
-    { key: "drawUntil", name: "Pioche jusqu'a jouable", desc: "Piocher tant qu'on n'a pas de carte jouable (au lieu d'une seule)." },
+    { key: "drawUntil", name: "Pioche jusqu'à jouable", desc: "Piocher tant qu'on n'a pas de carte jouable (au lieu d'une seule)." },
     { key: "customs", name: "Cartes maison", desc: "Ajouter Flush, Pay, +1 pour tous, Copie et Protection au paquet." },
   ];
 
@@ -122,8 +122,8 @@
         <div class="uno-tally">Pour : <strong>${c[0]}</strong> &nbsp;·&nbsp; Contre : <strong>${c[1]}</strong></div></div>`;
     }).join("");
     root.innerHTML = `<div class="uno-wrap"><p class="uno-eyebrow">Mise en place</p>
-      <h1 class="uno-title">Reglages de la partie</h1>
-      <p class="uno-sub">Les joueurs votent les regles sur leur telephone — <strong id="uno-countdown">…</strong></p>
+      <h1 class="uno-title">Réglages de la partie</h1>
+      <p class="uno-sub">Les joueurs votent les règles sur leur téléphone — <strong id="uno-countdown">…</strong></p>
       <div class="uno-rules">${rows}</div>
       <p class="uno-sub">${s.voted || 0}/${s.total || 0} ont vote</p>
       <button id="uno-finalize" class="uno-btn">Lancer maintenant</button></div>`;
@@ -137,7 +137,7 @@
     root.innerHTML = `<div class="uno-wrap" style="text-align:center">
       <p class="uno-eyebrow">Fin de la manche</p>
       <h1 class="uno-win">🎉 ${winnerName(s)} a vide sa main !</h1>
-      <p class="uno-sub">Vous pouvez relancer une manche (nouveau vote des regles).</p>
+      <p class="uno-sub">Vous pouvez relancer une manche (nouveau vote des règles).</p>
       <button id="uno-replay" class="uno-btn">Rejouer</button>${cheatBar()}</div>`;
     bind("uno-replay", () => send("replay"));
     wireCheats();

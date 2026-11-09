@@ -88,7 +88,7 @@
   const RULES = [
     { key: "cumul", name: "Cumul des pioches", desc: "Empiler +2 sur +2 (ou +4 sur +4)." },
     { key: "jumpin", name: "Jump-in", desc: "Jouer hors tour une carte identique au dessus." },
-    { key: "drawUntil", name: "Pioche jusqu'a jouable", desc: "Piocher jusqu'a avoir une carte jouable." },
+    { key: "drawUntil", name: "Pioche jusqu'à jouable", desc: "Piocher jusqu'a avoir une carte jouable." },
     { key: "customs", name: "Cartes maison", desc: "Ajouter Flush, Pay, +1, Copie, Protection." },
   ];
 
@@ -136,8 +136,8 @@
         </div></div>`;
     }).join("");
     root.innerHTML = `<div class="uno-wrap"><p class="uno-eyebrow">Mise en place</p>
-      <h1 class="uno-title">Vote des regles</h1>
-      <p class="uno-sub">Choisis Pour ou Contre chaque regle. La majorite decide.</p>
+      <h1 class="uno-title">Vote des règles</h1>
+      <p class="uno-sub">Choisis Pour ou Contre chaque règle. La majorité décide.</p>
       <div class="uno-rules">${rows}</div></div>`;
     root.querySelectorAll("[data-k]").forEach((b) => {
       b.onclick = () => {
@@ -161,7 +161,7 @@
   }
 
   function turnHint(s) {
-    if (you.yourTurn) return `<p class="uno-sub"><strong>A toi de jouer.</strong> Touche une carte jouable, ou pioche.</p>`;
+    if (you.yourTurn) return `<p class="uno-sub"><strong>À toi de jouer.</strong> Touche une carte jouable, ou pioche.</p>`;
     const jump = s.rules && s.rules.jumpin
       ? " Tu peux jouer une carte STRICTEMENT identique au dessus (jump-in)." : "";
     return `<p class="uno-sub">En attente des autres…${jump}</p>`;
@@ -203,12 +203,12 @@
   }
   function playDrawnPrompt(aw) {
     const c = hand.find((x) => x.id === aw.cardId);
-    return `<p class="uno-sub"><strong>Tu as pioche</strong> ${c ? "« " + unoCardLabel(c) + " »" : "une carte"} — elle est jouable.</p>
+    return `<p class="uno-sub"><strong>Tu as pioché</strong> ${c ? "« " + unoCardLabel(c) + " »" : "une carte"} — elle est jouable.</p>
       <div class="uno-pick"><button class="uno-btn" data-drawn="1">Jouer</button>
       <button class="uno-btn ghost" data-drawn="0">Garder</button></div>`;
   }
   function flushHint() {
-    return `<p class="uno-sub"><strong>Flush :</strong> choisis les cartes a jeter (jusqu'a 3), puis confirme. Tu piocheras autant de nouvelles cartes.</p>`;
+    return `<p class="uno-sub"><strong>Flush :</strong> choisis les cartes à jeter (jusqu'à 3), puis confirme. Tu piocheras autant de nouvelles cartes.</p>`;
   }
   function stackHint(aw) {
     return `<p class="uno-sub"><strong>Attaque : +${aw.amount}.</strong> Empile une carte ${aw.ptype === "joker" ? "+4" : "+2"} pour la renvoyer, ou pioche.</p>`;
@@ -281,7 +281,7 @@
     }
     if (aw && aw.type === "stack-or-take") {
       if (c.kind === aw.ptype) send("play", { cardId: id });
-      else unoToast("Empile une carte du meme type, ou pioche.");
+      else unoToast("Empile une carte du même type, ou pioche.");
       return;
     }
     if (aw) return; // other prompts ignore hand taps
@@ -301,7 +301,7 @@
     const mine = s.winner === me();
     root.innerHTML = `<div class="uno-wrap" style="text-align:center">
       <p class="uno-eyebrow">Fin de la manche</p>
-      <h1 class="uno-win">${mine ? "🎉 Tu as gagne !" : "Manche terminee"}</h1>
+      <h1 class="uno-win">${mine ? "🎉 Tu as gagné !" : "Manche terminée"}</h1>
       <p class="uno-sub">${mine ? "Tu as vide ta main le premier." : "Le host peut relancer une manche."}</p></div>`;
   }
 

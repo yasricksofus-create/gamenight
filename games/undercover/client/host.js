@@ -92,8 +92,8 @@
         ? `<div class="uc-pair"><span>Mr. White — Oui : <strong>${s.mrYes}</strong> / Non : <strong>${s.mrNo}</strong></span></div>`
         : `<div class="uc-pair"><span>Mr. White indisponible (4 joueurs minimum)</span></div>`;
       html = `<p class="uc-eyebrow">Mise en place</p>
-        <h1 class="uc-title">Reglages</h1>
-        <p class="subtitle">Les joueurs votent sur leur telephone — <strong id="uc-countdown">…</strong></p>
+        <h1 class="uc-title">Réglages</h1>
+        <p class="subtitle">Les joueurs votent sur leur téléphone — <strong id="uc-countdown">…</strong></p>
         ${mrRow}
         <p class="subtitle">Mode :</p>
         <ul class="uc-order">${modeRows}</ul>
@@ -102,7 +102,7 @@
     } else if (s.phase === "distribution") {
       html = `<p class="uc-eyebrow">Dossier confidentiel${s.universe ? " — " + s.universe : ""}</p>
         <h1 class="uc-title">Distribution</h1>
-        <p class="subtitle">Chaque joueur decouvre sa carte sur son telephone.</p>
+        <p class="subtitle">Chaque joueur découvre sa carte sur son téléphone.</p>
         ${orderList(s, false)}
         <button id="btn-begin" class="uc-btn">Commencer les indices</button>${cheatBar()}`;
     } else if (s.phase === "clues") {
@@ -117,24 +117,24 @@
         ${s.tie ? `<p class="subtitle">Revote entre ${s.tie.map((t) => esc(t.name)).join(" et ")}</p>` : ""}
         <p class="subtitle">${s.votesCount}/${s.votesNeeded} ont vote</p>
         ${orderList(s, false)}
-        <button id="btn-resolve" class="uc-btn ghost">Forcer la revelation</button>${cheatBar()}`;
+        <button id="btn-resolve" class="uc-btn ghost">Forcer la révélation</button>${cheatBar()}`;
     } else if (s.phase === "mrwhite") {
-      html = `<p class="uc-eyebrow">Demasque !</p>
+      html = `<p class="uc-eyebrow">Démasqué !</p>
         <h1 class="uc-title uc-expose">${esc(s.mrwhite.name)} était MR. WHITE</h1>
-        <p class="subtitle">Derniere chance : il tente de deviner le mot des civils, devant tout le monde…</p>${cheatBar()}`;
+        <p class="subtitle">Dernière chance : il tente de deviner le mot des civils, devant tout le monde…</p>${cheatBar()}`;
     } else if (s.phase === "reveal") {
       let txt;
       if (s.mrwhiteGuessResult) {
         txt = s.mrwhiteGuessResult.correct
-          ? `Mr. White a devine « <strong>${esc(s.mrwhiteGuessResult.guess)}</strong> » — CORRECT ! Il vole la victoire.`
-          : `Mr. White a propose « <strong>${esc(s.mrwhiteGuessResult.guess)}</strong> » — rate. Il est elimine.`;
+          ? `Mr. White a deviné « <strong>${esc(s.mrwhiteGuessResult.guess)}</strong> » — CORRECT ! Il vole la victoire.`
+          : `Mr. White a proposé « <strong>${esc(s.mrwhiteGuessResult.guess)}</strong> » — raté. Il est éliminé.`;
       } else if (s.lastEliminated) {
-        txt = `<strong>${esc(s.lastEliminated.name)}</strong> est elimine — c'etait un <strong>${ucRoleLabel(s.lastEliminated.role)}</strong>.`;
+        txt = `<strong>${esc(s.lastEliminated.name)}</strong> est éliminé — c'était un <strong>${ucRoleLabel(s.lastEliminated.role)}</strong>.`;
       } else {
-        txt = "Egalite : personne n'est elimine cette manche.";
+        txt = "Égalité : personne n'est éliminé cette manche.";
       }
       html = `<h1 class="uc-title">Elimination</h1><p class="uc-elim">${txt}</p>
-        <button id="btn-next" class="uc-btn">${s.winner ? "Voir le resultat" : "Manche suivante"}</button>${cheatBar()}`;
+        <button id="btn-next" class="uc-btn">${s.winner ? "Voir le résultat" : "Manche suivante"}</button>${cheatBar()}`;
     } else if (s.phase === "ended") {
       html = endScreen(s);
     }
