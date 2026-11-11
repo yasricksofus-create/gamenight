@@ -32,12 +32,28 @@ function tooFast(socket, key) {
   socket.data.lastChange[key] = now;
   return false;
 }
+// Calls a function of the room's game module SAFELY: if the game has a bug and
+// throws an error, we log it and warn the host screen, but the server keeps
+// running (before, one error in one game stopped the whole site, every room).
+function callGame(room, fn, ...args) {
+  const module = gameModules[room.gameId];
+  if (!module || typeof module[fn] !== "function") return undefined;
+  try {
+    // handle() is the only one with another order: handle(api, actor, room, type, payload)
+    if (fn === "handle") return module.handle(makeApi(room), args[0], room, args[1], args[2]);
+    return module[fn](makeApi(room), room, ...args);
+  } catch (e) {
+    console.error(`[room ${room.code}] ERREUR dans le jeu "${room.gameId}" (${fn}) :`, e && e.stack || e);
+    if (room.hostSocketId) io.to(room.hostSocketId).emit("game:error", { message: "Petit souci dans le jeu (action ignorée). Si ça bloque, relance une partie." });
+    return undefined;
+  }
+}
 // Tells the game that a player's name or avatar changed (so it refreshes).
 function playerUpdated(room, seatId) {
   const module = gameModules[room.gameId];
   if (!room.gameState || !module) return;
-  if (module.onPlayerUpdate) module.onPlayerUpdate(makeApi(room), room, seatId);
-  else if (module.onAvatarChange) module.onAvatarChange(makeApi(room), room, seatId);
+  if (module.onPlayerUpdate) callGame(room, "onPlayerUpdate", seatId);
+  else callGame(room, "onAvatarChange", seatId);
 }
 // The engine loads every game from its own folder under /games (see the loader).
 const { games, getGameById, gameModules } = require("./engine/games-loader");
@@ -117,16 +133,21 @@ music.mount(app);
 
 // ----- Read the collected feedback (protected page) -----
 // Open  /admin/feedback?key=YOUR_KEY  in a browser to read every retour.
-// The key is "gamenight" unless you set FEEDBACK_KEY in Render's Environment.
+// The key is the FEEDBACK_KEY setting in Render (Environment). There is NO
+// default any more: the code is public on GitHub, so a default would be known
+// by everyone. Without the setting, the page stays closed.
 // NOTE: the file lives on Render's disk, which is WIPED on every redeploy -> read
 // it before pushing an update if you want to keep older retours.
-const FEEDBACK_KEY = process.env.FEEDBACK_KEY || "gamenight";
+const FEEDBACK_KEY = process.env.FEEDBACK_KEY || "";
 function escHtml(s) {
   return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 app.get("/admin/feedback", (req, res) => {
+  if (!FEEDBACK_KEY) {
+    return res.status(503).type("text").send("Page fermée : ajoute un mot de passe FEEDBACK_KEY dans Render (Environment), puis ouvre /admin/feedback?key=TON_MOT_DE_PASSE");
+  }
   if ((req.query.key || "") !== FEEDBACK_KEY) {
-    return res.status(403).send("Acces refuse. Ajoute  ?key=TON_MOT_DE_PASSE  a l'URL.");
+    return res.status(403).type("text").send("Accès refusé. Ajoute ?key=TON_MOT_DE_PASSE à l'adresse.");
   }
   let raw = "";
   try { raw = fs.readFileSync(path.join(__dirname, "feedback.log"), "utf8"); } catch (e) {}
@@ -155,6 +176,29 @@ const rooms = {};
 const REACTIONS = ["🔥", "😂", "😍", "🤯", "💀", "🤮", "👏", "🥱"];
 
 function token() { return crypto.randomBytes(9).toString("hex"); }
+
+// Room creation limits (anti-abuse): a script could otherwise create thousands
+// of rooms and fill the server's memory. A real host creates one or two.
+const MAX_ROOMS = 300;               // whole server
+const ROOMS_PER_IP = 10;             // per visitor (IP address) ...
+const ROOMS_WINDOW_MS = 10 * 60000;  // ... every 10 minutes
+const roomsByIp = new Map();         // ip -> [creation times]
+function ipOf(socket) {
+  const fwd = String(socket.handshake.headers["x-forwarded-for"] || "").split(",")[0].trim();
+  return fwd || socket.handshake.address || "?";
+}
+function canCreateRoom(socket) {
+  if (Object.keys(rooms).length >= MAX_ROOMS) return "Le site est plein pour le moment, réessaie dans quelques minutes.";
+  const ip = ipOf(socket), now = Date.now();
+  const list = (roomsByIp.get(ip) || []).filter((t) => now - t < ROOMS_WINDOW_MS);
+  if (list.length >= ROOMS_PER_IP) return "Trop de salles créées d'un coup. Attends quelques minutes.";
+  list.push(now); roomsByIp.set(ip, list);
+  return null;
+}
+setInterval(() => { // forget old entries
+  const now = Date.now();
+  for (const [ip, l] of roomsByIp) { const k = l.filter((t) => now - t < ROOMS_WINDOW_MS); if (k.length) roomsByIp.set(ip, k); else roomsByIp.delete(ip); }
+}, ROOMS_WINDOW_MS).unref();
 
 function generateRoomCode() {
   const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ"; // no I / O to avoid confusion
@@ -196,11 +240,22 @@ function makeApi(room) {
   };
 }
 
+// The same seat (or host screen) opened in a SECOND tab / window: the new tab
+// takes over, and the old one is told (instead of silently receiving nothing).
+function replaceOldSocket(oldId, newSocket, room) {
+  if (!oldId || oldId === newSocket.id) return;
+  const old = io.sockets.sockets.get(oldId);
+  if (!old) return;
+  old.emit("session:replaced", {});
+  old.leave(room.code);
+  old.data = {}; // its disconnect must not start a grace timer for the seat
+}
+
 function closeRoom(room, message) {
   if (!rooms[room.code]) return;
   if (room.hostGrace) clearTimeout(room.hostGrace);
   room.players.forEach((p) => { if (p.grace) clearTimeout(p.grace); });
-  io.to(room.code).emit("room:closed", { message: message || "La salle est fermee." });
+  io.to(room.code).emit("room:closed", { message: message || "La salle est fermée." });
   delete rooms[room.code];
   console.log(`[room ${room.code}] closed`);
 }
@@ -209,7 +264,9 @@ io.on("connection", (socket) => {
   // ---------- HOST: create a room ----------
   socket.on("host:createRoom", ({ gameId, avatar } = {}) => {
     const game = getGameById(gameId);
-    if (!game) return socket.emit("room:error", { message: "Unknown game." });
+    if (!game) return socket.emit("room:error", { message: "Ce jeu n'existe pas." });
+    const refused = canCreateRoom(socket);
+    if (refused) return socket.emit("room:error", { message: refused });
 
     const code = generateRoomCode();
     rooms[code] = {
@@ -229,6 +286,7 @@ io.on("connection", (socket) => {
       return socket.emit("host:reconnectFailed", {});
     }
     if (room.hostGrace) { clearTimeout(room.hostGrace); room.hostGrace = null; }
+    replaceOldSocket(room.hostSocketId, socket, room);
     room.hostSocketId = socket.id;
     if (avatar) room.hostAvatar = cleanAvatar(avatar);
     socket.join(room.code);
@@ -238,10 +296,7 @@ io.on("connection", (socket) => {
       players: publicPlayers(room), inGame: !!room.gameState,
     });
     io.to(room.code).emit("room:hostStatus", { connected: true });
-    const module = gameModules[room.gameId];
-    if (room.gameState && module && module.onReconnect) {
-      module.onReconnect(makeApi(room), room, { isHost: true });
-    }
+    if (room.gameState) callGame(room, "onReconnect", { isHost: true });
     console.log(`[room ${room.code}] host reconnected`);
   });
 
@@ -275,7 +330,7 @@ io.on("connection", (socket) => {
     });
     broadcastPlayers(room);
     // Late arrival: let the game module seat this new player (it decides how).
-    if (lateJoin && module.onPlayerJoin) module.onPlayerJoin(makeApi(room), room, seat.seatId);
+    if (lateJoin) callGame(room, "onPlayerJoin", seat.seatId);
     console.log(`[room ${code}] "${name}" joined (${room.players.length})`);
   });
 
@@ -286,6 +341,7 @@ io.on("connection", (socket) => {
     if (!room || !seat) return socket.emit("reconnect:failed", {});
 
     if (seat.grace) { clearTimeout(seat.grace); seat.grace = null; }
+    replaceOldSocket(seat.socketId, socket, room);
     seat.socketId = socket.id;
     seat.connected = true;
     socket.join(room.code);
@@ -295,10 +351,7 @@ io.on("connection", (socket) => {
       you: { id: seatId, name: seat.name, avatar: seat.avatar }, seatId, inGame: !!room.gameState,
     });
     broadcastPlayers(room);
-    const module = gameModules[room.gameId];
-    if (room.gameState && module && module.onReconnect) {
-      module.onReconnect(makeApi(room), room, { seatId });
-    }
+    if (room.gameState) callGame(room, "onReconnect", { seatId });
     console.log(`[room ${room.code}] "${seat.name}" reconnected`);
   });
 
@@ -344,10 +397,7 @@ io.on("connection", (socket) => {
     if (!seat) return;
     if (seat.grace) clearTimeout(seat.grace);
     room.players = room.players.filter((p) => p.seatId !== seat.seatId);
-    const module = gameModules[room.gameId];
-    if (room.gameState && module && module.onPlayerLeave) {
-      module.onPlayerLeave(makeApi(room), room, seat.seatId);
-    }
+    if (room.gameState) callGame(room, "onPlayerLeave", seat.seatId);
     broadcastPlayers(room);
     socket.leave(room.code);
     socket.data = {};
@@ -355,7 +405,7 @@ io.on("connection", (socket) => {
   });
   socket.on("host:leave", () => {
     const room = rooms[socket.data.code];
-    if (room && socket.data.role === "host") closeRoom(room, "L'host a ferme la salle.");
+    if (room && socket.data.role === "host") closeRoom(room, "L'host a fermé la salle.");
   });
 
   // ---------- HOST: start the game ----------
@@ -363,11 +413,11 @@ io.on("connection", (socket) => {
     const room = rooms[socket.data.code];
     if (!room || socket.data.role !== "host") return;
     const module = gameModules[room.gameId];
-    if (!module) return socket.emit("game:error", { message: "Ce jeu n'a pas encore de regles (bientot !)." });
+    if (!module) return socket.emit("game:error", { message: "Ce jeu n'a pas encore de règles (bientôt !)." });
     if (room.players.length < (module.minPlayers || 1)) {
       return socket.emit("game:error", { message: `Il faut au moins ${module.minPlayers} joueurs pour lancer.` });
     }
-    module.start(makeApi(room), room);
+    callGame(room, "start");
     io.to(room.code).emit("game:started", { gameId: room.gameId });
     console.log(`[room ${room.code}] game "${room.gameId}" started`);
   });
@@ -390,7 +440,7 @@ io.on("connection", (socket) => {
     const seat = { seatId: token(), name, socketId: null, connected: true, grace: null, isBot: true, avatar: PixelAvatar.random() };
     room.players.push(seat);
     broadcastPlayers(room);
-    if (late && module.onPlayerJoin) module.onPlayerJoin(makeApi(room), room, seat.seatId);
+    if (late) callGame(room, "onPlayerJoin", seat.seatId);
     console.log(`[room ${room.code}] bot added (${room.players.length})`);
   });
 
@@ -405,8 +455,7 @@ io.on("connection", (socket) => {
     // screen only; the others are announced to everyone (the fun of it).
     if (cheat.secret) socket.emit("game:cheat", { cheat });
     else io.to(room.code).emit("game:cheat", { cheat });
-    const module = gameModules[room.gameId];
-    if (room.gameState && module && module.onCheat) module.onCheat(makeApi(room), room, cheatId);
+    if (room.gameState) callGame(room, "onCheat", cheatId);
   });
 
   // ---------- In-game action ----------
@@ -422,10 +471,8 @@ io.on("connection", (socket) => {
     socket.data.bucket = b;
     if (b.tokens < 1) return;
     b.tokens -= 1;
-    const module = gameModules[room.gameId];
-    if (!module || !module.handle) return;
     const actor = { isHost: socket.data.role === "host", seatId: socket.data.seatId || null };
-    module.handle(makeApi(room), actor, room, type, payload);
+    callGame(room, "handle", actor, type, payload);
   });
 
   // ---------- Client bundle loaded -> push it the current state ----------
@@ -435,10 +482,8 @@ io.on("connection", (socket) => {
   socket.on("game:sync", () => {
     const room = rooms[socket.data.code];
     if (!room || !room.gameState) return;
-    const module = gameModules[room.gameId];
-    if (!module || !module.onReconnect) return;
     const who = socket.data.role === "host" ? { isHost: true } : { seatId: socket.data.seatId };
-    module.onReconnect(makeApi(room), room, who);
+    callGame(room, "onReconnect", who);
   });
 
   // ---------- Clock sync ----------
@@ -505,10 +550,7 @@ io.on("connection", (socket) => {
       broadcastPlayers(room);
       seat.grace = setTimeout(() => {
         room.players = room.players.filter((p) => p.seatId !== seat.seatId);
-        const module = gameModules[room.gameId];
-        if (room.gameState && module && module.onPlayerLeave) {
-          module.onPlayerLeave(makeApi(room), room, seat.seatId);
-        }
+        if (room.gameState) callGame(room, "onPlayerLeave", seat.seatId);
         broadcastPlayers(room);
         console.log(`[room ${room.code}] "${seat.name}" removed (grace expired)`);
       }, GRACE_MS);
@@ -516,6 +558,12 @@ io.on("connection", (socket) => {
     }
   });
 });
+
+// ---------- Last safety net ----------
+// Errors thrown later, inside a game's own timers (setTimeout), cannot be caught
+// by callGame. Node would then stop the whole server; we log them instead.
+process.on("uncaughtException", (e) => console.error("[ERREUR non rattrapée]", e && e.stack || e));
+process.on("unhandledRejection", (e) => console.error("[ERREUR non rattrapée (promesse)]", e && e.stack || e));
 
 // ---------- Health check ----------
 app.get("/healthz", (req, res) => res.type("text").send("ok"));
@@ -543,7 +591,7 @@ let stopping = false;
 process.on("SIGTERM", () => {
   if (stopping) return;
   stopping = true;
-  io.emit("server:restarting", { message: "Le site redemarre pour une mise a jour : la partie en cours va s'arreter. Recharge la page dans 1 minute." });
+  io.emit("server:restarting", { message: "Le site redémarre pour une mise à jour : la partie en cours va s'arrêter. Recharge la page dans 1 minute." });
   setTimeout(() => process.exit(0), 1500);
 });
 

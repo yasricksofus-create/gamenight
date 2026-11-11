@@ -145,6 +145,76 @@ async function test(name, fn) {
     assert.strictEqual(s.mrwhiteGuessResult.correct, false);
   });
 
+  await test("Undercover: the host chooses the number of undercovers (capped)", async () => {
+    const t = setup(undercover, ["A", "B", "C", "D", "E", "F", "G"], []);
+    t.act("host", "setUndercovers", { value: 3 });
+    assert.strictEqual(t.s().settings.nbUnder, 3);
+    t.act("host", "finalizeSettings");
+    assert.strictEqual(Object.values(t.s().roles).filter((r) => r === "undercover").length, 3);
+    const t2 = setup(undercover, ["A", "B", "C", "D"], []);
+    t2.act("host", "setUndercovers", { value: 3 }); // 4 players: at most 1
+    assert.strictEqual(t2.s().settings.nbUnder, 1);
+    t2.act("p0", "setUndercovers", { value: "auto" }); // a player cannot
+    assert.strictEqual(t2.s().settings.nbUnder, 1);
+  });
+
+  await test("Undercover: Mr. White never speaks 1st or 2nd, in every round", async () => {
+    for (let k = 0; k < 40; k++) {
+      const t = setup(undercover, ["A", "B", "C", "D", "E", "F"], []);
+      t.act("p0", "voteSetting", { key: "mrWhite", value: true });
+      t.act("host", "finalizeSettings");
+      const s = t.s();
+      const mr = Object.keys(s.roles).find((id) => s.roles[id] === "mrwhite");
+      for (let r = 0; r < 3; r++) {
+        const speaking = s.order.filter((id) => s.alive[id]);
+        assert.ok(speaking.indexOf(mr) >= 2, "round " + s.round + ": Mr. White at " + speaking.indexOf(mr));
+        s.phase = "reveal"; s.winner = null; t.act("host", "next");
+      }
+    }
+  });
+
+  await test("Undercover: leaving never freezes the game (vote, Mr. White's guess)", async () => {
+    const t = setup(undercover, ["A", "B", "C", "D", "E", "F"], []);
+    t.act("host", "setUndercovers", { value: 1 }); // 1 undercover: a civil leaving does not end the game
+    t.act("host", "finalizeSettings"); t.act("host", "beginClues"); t.act("host", "toVote");
+    const s = t.s();
+    const civ = Object.keys(s.roles).filter((id) => s.roles[id] === "civil");
+    const [x, y] = civ;
+    // everyone but x votes; one of them votes FOR x; then x leaves
+    const others = Object.keys(s.roles).filter((id) => id !== x);
+    others.forEach((id, i) => t.act(id, "vote", { targetId: i === 0 ? x : (id === y ? others[1] : y) }));
+    t.room.players = t.room.players.filter((p) => p.seatId !== x);
+    undercover.onPlayerLeave(t.api, t.room, x);
+    assert.ok(t.log.some((l) => l[1] === "uc:revote"), "whoever voted for the leaver must revote");
+    assert.strictEqual(s.phase, "vote");
+    const again = others.find((id) => !s.votes[id]);
+    t.act(again, "vote", { targetId: others.find((o) => o !== again) });
+    assert.notStrictEqual(s.phase, "vote", "all remaining votes in -> counted");
+    assert.strictEqual(s.lastLeft.name, t.s().names[x]);
+    // Mr. White leaves while guessing
+    const t2 = setup(undercover, ["A", "B", "C", "D"], []);
+    t2.act("host", "finalizeSettings");
+    const s2 = t2.s();
+    s2.roles.p1 = "mrwhite"; s2.phase = "mrwhite"; s2.mrwhiteGuessing = "p1";
+    undercover.onPlayerLeave(t2.api, t2.room, "p1");
+    assert.strictEqual(s2.phase, "reveal");
+    assert.strictEqual(s2.mrwhiteGuessResult.left, true);
+  });
+
+  await test("Undercover: end screen gives each player's id (own result by id)", async () => {
+    const t = setup(undercover, ["A", "B", "C", "D"], []);
+    t.act("host", "finalizeSettings");
+    t.s().phase = "reveal"; t.s().winner = "civils"; t.act("host", "next");
+    const st = t.log.filter((x) => x[1] === "uc:state").pop()[2];
+    assert.ok(st.finalRoles.every((r) => r.id && r.name && r.role));
+  });
+
+  await test("Undercover: every character has a series (right picture)", async () => {
+    const d = require("./games/undercover/data.js");
+    const missing = Object.keys(d.CHARS).filter((n) => !d.SERIES[n]);
+    assert.deepStrictEqual(missing, []);
+  });
+
   console.log(`\n${ok} test(s) OK` + (process.exitCode ? " — DES ECHECS" : ""));
   setTimeout(() => process.exit(process.exitCode || 0), 50);
 })();

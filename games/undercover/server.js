@@ -87,8 +87,10 @@ function rotate(arr, k) {
 
 // Total impostor count ("sale" scaling). Mr. White does NOT add one: when he is
 // present he TAKES the place of one undercover, so the total stays the same.
-function composition(n, wantMrWhite) {
-  const impostors = n >= 8 ? 3 : n >= 5 ? 2 : 1;
+// wanted = number of undercovers chosen by the host ("auto" = by player count).
+function composition(n, wantMrWhite, wanted) {
+  const auto = n >= 8 ? 3 : n >= 5 ? 2 : 1;
+  const impostors = wanted && wanted !== "auto" ? Number(wanted) + (wantMrWhite && n >= 4 ? 1 : 0) : auto;
   const mrw = wantMrWhite && n >= 4;
   let nbUnder = mrw ? impostors - 1 : impostors;
   // Safety: keep the civils a strict majority.
@@ -123,6 +125,22 @@ function scheduleBots(api, room) {
       if (room.gameState === s && s.phase === "mrwhite" && s.mrwhiteGuessing === id) act(id, "mrwhiteGuess", { word: pick(ALL_WORDS) });
     }, 2500);
   }
+}
+
+// Mr. White never speaks 1st or 2nd, in EVERY round: he needs to hear a couple
+// of clues first. Only living players count (the dead are skipped when speaking).
+function mrWhiteLate(order, mrId, alive) {
+  order = order.slice();
+  if (!mrId) return order;
+  const speaking = order.filter((id) => !alive || alive[id]);
+  const pos = speaking.indexOf(mrId);
+  if (pos < 0 || pos >= 2 || speaking.length <= 2) return order;
+  const later = speaking.slice(2).filter((id) => id !== mrId);
+  if (!later.length) return order;
+  const other = pick(later);
+  const i = order.indexOf(mrId), j = order.indexOf(other);
+  [order[i], order[j]] = [order[j], order[i]];
+  return order;
 }
 
 // ---------- state transitions ----------
@@ -186,7 +204,7 @@ function deal(api, room) {
   const players = api.players();
   const ids = players.map((p) => p.id);
   const n = ids.length;
-  const { nbUnder, mrw } = composition(n, state.settings.mrWhite);
+  const { nbUnder, mrw } = composition(n, state.settings.mrWhite, state.settings.nbUnder);
 
   const shuffled = shuffle(ids);
   const undercovers = new Set(shuffled.slice(0, nbUnder));
@@ -208,16 +226,8 @@ function deal(api, room) {
     cards[p.id] = cardFor(role, pair);
   });
 
-  // Base turn order (round 1): Mr. White is never 1st or 2nd. Later rounds
-  // rotate this base order so a different player leads each round.
-  let baseOrder = shuffle(ids);
-  if (mrwhiteId) {
-    const idx = baseOrder.indexOf(mrwhiteId);
-    if (idx < 2 && baseOrder.length > 2) {
-      const swapWith = 2 + Math.floor(Math.random() * (baseOrder.length - 2));
-      [baseOrder[idx], baseOrder[swapWith]] = [baseOrder[swapWith], baseOrder[idx]];
-    }
-  }
+  // Turn order: Mr. White is never 1st or 2nd (he needs to hear clues first).
+  const baseOrder = mrWhiteLate(shuffle(ids), mrwhiteId);
 
   state.roles = roles;
   state.alive = alive;
@@ -313,6 +323,8 @@ function broadcastState(api, room) {
       modeCounts, mrYes, mrNo,
       voted, total: api.players().length,
       endsAt: s.settings.endsAt,
+      nbUnder: s.settings.nbUnder,
+      maxUnder: Math.max(1, Math.floor((api.players().length - 1) / 2)), // civils must stay the majority
     });
     return;
   }
@@ -334,6 +346,7 @@ function broadcastState(api, room) {
     lastEliminated: s.lastEliminated,
     winner: s.winner,
     universe: s.pair && s.pair.universe,
+    lastLeft: s.lastLeft || null, // "X a quitté la partie"
   };
   if (s.phase === "mrwhite") {
     payload.mrwhite = { id: s.mrwhiteGuessing, name: s.names[s.mrwhiteGuessing] };
@@ -345,7 +358,7 @@ function broadcastState(api, room) {
     payload.pair = s.pair;
     const r = Object.values(s.rating || {});
     payload.rating = { up: r.filter((x) => x).length, down: r.filter((x) => !x).length };
-    payload.finalRoles = s.order.map((id) => ({ name: s.names[id], role: s.roles[id] }));
+    payload.finalRoles = s.order.map((id) => ({ id, name: s.names[id], role: s.roles[id] }));
   }
   api.toAll("uc:state", payload);
   scheduleBots(api, room);
@@ -380,6 +393,15 @@ module.exports = {
           v.mode = payload.value;
         }
         state.settings.votes[me] = v;
+        broadcastState(api, room);
+        break;
+      }
+      case "setUndercovers": { // host only: "auto" or 1..3 (capped so civils stay the majority)
+        if (!isHost || state.phase !== "settings") break;
+        const v = payload && payload.value;
+        const max = Math.max(1, Math.floor((api.players().length - 1) / 2));
+        state.settings.nbUnder = v === "auto" ? "auto" : Math.min(max, Math.max(1, Math.round(Number(v)) || 1));
+        memoryOf(room).nbUnder = state.settings.nbUnder;
         broadcastState(api, room);
         break;
       }
@@ -437,8 +459,9 @@ module.exports = {
             state.round += 1;
             state.votes = {};
             state.mrwhiteGuessResult = null;
-            // New round -> a brand new random turn order.
-            state.order = shuffle(state.order);
+            // New round -> a brand new random turn order (Mr. White still not 1st/2nd).
+            const mr = Object.keys(state.roles).find((id) => state.roles[id] === "mrwhite" && state.alive[id]);
+            state.order = mrWhiteLate(shuffle(state.order), mr, state.alive);
           }
           broadcastState(api, room);
         }
@@ -518,6 +541,11 @@ module.exports = {
     if (who && who.seatId && state.cards && state.cards[who.seatId]) {
       api.toPlayer(who.seatId, "uc:you", state.cards[who.seatId]);
     }
+    if (who && who.seatId && state.phase === "vote" && state.votes && state.votes[who.seatId]) {
+      broadcastState(api, room); // state first (the phone needs voteSeq), then "already voted"
+      api.toPlayer(who.seatId, "uc:voted", { targetId: state.votes[who.seatId] });
+      return;
+    }
     broadcastState(api, room); // resends the public board to everyone (incl. the returner)
   },
 
@@ -526,10 +554,32 @@ module.exports = {
     if (!state) return;
     if (state.phase === "settings") { delete state.settings.votes[playerId]; broadcastState(api, room); return; }
     if (state.alive[playerId] === undefined) return;
+    const wasAlive = state.alive[playerId];
     state.alive[playerId] = false;
     delete state.votes[playerId];
+    if (wasAlive) state.lastLeft = { name: state.names[playerId], at: Date.now() };
+    // Mr. White left while guessing: the guess counts as missed (no more freeze).
+    if (state.phase === "mrwhite" && state.mrwhiteGuessing === playerId) {
+      state.mrwhiteGuessResult = { guess: "", correct: false, left: true };
+      state.lastEliminated = { id: playerId, name: state.names[playerId], role: "mrwhite" };
+      state.mrwhiteGuessing = null;
+      checkWinner(state);
+      state.phase = "reveal";
+      return broadcastState(api, room);
+    }
     checkWinner(state);
-    if (state.winner && state.phase !== "ended") state.phase = "ended";
+    if (state.winner && state.phase !== "ended") { state.phase = "ended"; return broadcastState(api, room); }
+    if (state.phase === "vote") {
+      // votes FOR the one who left are void: those voters vote again
+      const lost = Object.keys(state.votes).filter((v) => state.votes[v] === playerId);
+      lost.forEach((v) => { delete state.votes[v]; api.toPlayer(v, "uc:revote", { name: state.names[playerId] }); });
+      if (state.tieCandidates) {
+        state.tieCandidates = state.tieCandidates.filter((id) => id !== playerId);
+        if (state.tieCandidates.length < 2) state.tieCandidates = null;
+      }
+      // everyone still here has voted -> count now (before, it waited forever)
+      if (aliveIds(state).length && aliveIds(state).every((id) => state.votes[id])) return resolveVote(api, room);
+    }
     broadcastState(api, room);
   },
 };
@@ -539,7 +589,8 @@ function openSettings(api, room) {
   const endsAt = Date.now() + SETTINGS_SECONDS * 1000;
   room.gameState = {
     phase: "settings",
-    settings: { votes: {}, endsAt, mrWhite: false, mode: "classique", timer: null },
+    settings: { votes: {}, endsAt, mrWhite: false, mode: "classique", timer: null,
+      nbUnder: (room.ucMemory && room.ucMemory.nbUnder) || "auto" }, // kept for the next game
   };
   // Auto-finalize when the timer runs out (host can also finalize early).
   room.gameState.settings.timer = setTimeout(() => finalizeSettings(api, room), SETTINGS_SECONDS * 1000);

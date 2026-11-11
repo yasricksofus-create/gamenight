@@ -10,11 +10,13 @@
   let votedSeq = -1;     // the vote I already voted in (a revote = a new number)
   let myVote = { mode: null, mrWhite: null }; // my settings choices (local)
   let rated = { key: null, up: null };          // my 👍/👎 on the pair of the game
-  const myName = new URLSearchParams(location.search).get("name"); // to read my final role
+  let leftMsg = "";                             // one-time notice (my vote target left)
 
   socket.on("uc:you", (c) => { card = c; render(); });
   socket.on("uc:state", (s) => { state = s; if (s.themeKey) applyUcTheme(s.themeKey); render(); });
   socket.on("uc:voted", () => { votedSeq = state ? state.voteSeq : votedSeq; render(); });
+  // the player I voted for left: my vote no longer counts, I vote again
+  socket.on("uc:revote", ({ name }) => { votedSeq = -1; leftMsg = esc(name) + " est parti : vote à nouveau."; render(); });
 
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
   function myEntry() { return state ? state.order.find((p) => p.id === window.mySeatId) : null; }
@@ -28,6 +30,9 @@
     if (!card) return; // cards not dealt yet
 
     let html = cardHtml();
+    if (leftMsg && s.phase === "vote") html += `<p class="uc-notice">${leftMsg}</p>`;
+    else leftMsg = "";
+    if (s.lastLeft && Date.now() - s.lastLeft.at < 20000) html += `<p class="uc-notice">${esc(s.lastLeft.name)} a quitté la partie.</p>`;
     const me = myEntry();
     const alive = me ? me.alive : false;
 
@@ -45,18 +50,20 @@
           <div class="uc-guess"><input id="uc-guess-input" placeholder="ton mot…" autocomplete="off" />
           <button id="uc-guess-btn" class="uc-btn">Proposer</button></div>`;
       } else {
-        html += `<p class="uc-wait"><strong>${s.mrwhite ? s.mrwhite.name : "?"}</strong> était Mr. White ! Il tente de deviner le mot…</p>`;
+        html += `<p class="uc-wait"><strong>${s.mrwhite ? esc(s.mrwhite.name) : "?"}</strong> était Mr. White ! Il tente de deviner le mot…</p>`;
       }
     } else if (s.phase === "reveal") {
       if (s.mrwhiteGuessResult) {
-        html += `<p class="uc-wait">Mr. White : « ${esc(s.mrwhiteGuessResult.guess)} » — ${s.mrwhiteGuessResult.correct ? "correct !" : "raté."}</p>`;
+        html += s.mrwhiteGuessResult.left
+          ? `<p class="uc-wait">Mr. White a quitté la partie sans deviner.</p>`
+          : `<p class="uc-wait">Mr. White : « ${esc(s.mrwhiteGuessResult.guess)} » — ${s.mrwhiteGuessResult.correct ? "correct !" : "raté."}</p>`;
       } else {
         const e = s.lastEliminated;
-        html += `<p class="uc-wait">${e ? e.name + " est éliminé (" + ucRoleLabel(e.role) + ")." : "Personne n'est éliminé."}</p>`;
+        html += `<p class="uc-wait">${e ? esc(e.name) + " est éliminé (" + ucRoleLabel(e.role) + ")." : "Personne n'est éliminé."}</p>`;
       }
     } else if (s.phase === "ended") {
       // Roles are only revealed now (finalRoles). Find mine to know if I won.
-      const mine = (s.finalRoles || []).find((r) => r.name === myName);
+      const mine = (s.finalRoles || []).find((r) => r.id === window.mySeatId);
       const myRole = mine ? mine.role : null;
       const won = (s.winner === "civils" && myRole === "civil")
         || (s.winner === "impostors" && (myRole === "undercover" || myRole === "mrwhite"));
@@ -124,15 +131,15 @@
       return `<div class="uc-card">
         <span class="uc-stamp">Voici ta carte</span>
         <img id="uc-img" class="uc-card-img" alt="" hidden />
-        <span class="uc-word">${c.name}</span>
-        <span class="uc-card-hint">${c.desc}</span>
+        <span class="uc-word">${esc(c.name)}</span>
+        <span class="uc-card-hint">${esc(c.desc)}</span>
       </div>`;
     }
     // word
     return `<div class="uc-card">
       <span class="uc-stamp">Voici ta carte</span>
-      <span class="uc-word">${card.word}</span>
-      <span class="uc-card-hint">Donne des indices sur ton mot, sans le dire ni etre trop evident.</span>
+      <span class="uc-word">${esc(card.word)}</span>
+      <span class="uc-card-hint">Donne des indices sur ton mot, sans le dire ni être trop évident.</span>
     </div>`;
   }
 
@@ -149,7 +156,7 @@
     if (card && card.kind === "character") {
       const img = document.getElementById("uc-img");
       if (img) {
-        ucAnimeImage(card.character.name).then((url) => {
+        ucAnimeImage(card.character.name, card.character.series).then((url) => {
           if (url) { img.src = url; img.hidden = false; }
         });
       }

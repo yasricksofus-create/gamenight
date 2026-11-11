@@ -441,8 +441,37 @@ const WORDS = [
   ["Trompette", "Saxophone"], ["Guitare", "Ukulélé"], ["Violon", "Violoncelle"], ["Piano", "Batterie"],
 ];
 
+// Which series each character comes from, as words found in the series' title
+// on AniList ("|" = or). The browser uses it to pick the RIGHT picture when a
+// name is ambiguous (there are many "Happy", "Power" or "Asta" on AniList).
+const UNIVERSE_HINT = {
+  "Naruto": "naruto", "One Piece": "onepiece", "Dragon Ball": "dragonball", "Jujutsu Kaisen": "jujutsu",
+  "My Hero Academia": "myheroacademia|bokunohero", "Demon Slayer": "demonslayer|kimetsu", "Bleach": "bleach",
+  "Attack on Titan": "attackontitan|shingeki", "Hunter x Hunter": "hunter", "Fairy Tail": "fairytail",
+  "Black Clover": "blackclover", "Chainsaw Man": "chainsawman", "Spy x Family": "spy", "Blue Lock": "bluelock",
+};
+const SERIES = {
+  "Itachi Uchiha": "naruto", "Shikamaru Nara": "naruto", "Shoto Todoroki": "myheroacademia|bokunohero",
+  "Tenya Iida": "myheroacademia|bokunohero", "Kenpachi Zaraki": "bleach", "Happy": "fairytail",
+  "Yami Sukehiro": "blackclover", "Pochita": "chainsawman", "Shoyo Hinata": "haikyu",
+  "Light Yagami": "deathnote", "L Lawliet": "deathnote", "Ryuk": "deathnote", "Lelouch Lamperouge": "codegeass",
+  "Senku Ishigami": "drstone", "Edward Elric": "fullmetal|hagane", "Conan Edogawa": "conan|detective",
+  "Saitama": "onepunch", "Shigeo Kageyama": "mobpsycho", "Sung Jinwoo": "sololeveling|orelevel",
+  "Kirito": "swordartonline", "Ainz Ooal Gown": "overlord", "Rimuru Tempest": "slime|tensei",
+  "Akame": "akamegakill", "Artoria Pendragon": "fate", "Mai Sakurajima": "bunnygirl|seishunbuta",
+  "Kaguya Shinomiya": "kaguya", "Shouko Komi": "komi", "Hitori Gotoh": "bocchi", "Zero Two": "franxx",
+  "Kanna Kamui": "kobayashi|dragonmaid", "Doraemon": "doraemon", "Pikachu": "pokemon|pocketmonster",
+  "Dio Brando": "jojo", "Lupin III": "lupin", "Frieren": "frieren|sousou", "Fern": "frieren|sousou",
+  "Marcille Donato": "dungeon|meshi", "Maomao": "apothecary|kusuriya", "Kafka Hibino": "kaiju",
+  "Taro Sakamoto": "sakamoto", "Ai Hoshino": "oshinoko", "Aqua Hoshino": "oshinoko", "Marin Kitagawa": "bisque|dressup",
+};
+Object.keys(UNIVERS).forEach((u) => UNIVERS[u].forEach(([a, b]) => {
+  if (!SERIES[a]) SERIES[a] = UNIVERSE_HINT[u];
+  if (!SERIES[b]) SERIES[b] = UNIVERSE_HINT[u];
+}));
+
 function character(name) {
-  return { name, desc: CHARS[name] || "" };
+  return { name, desc: CHARS[name] || "", series: SERIES[name] || "" };
 }
 
-module.exports = { CHARS, CONFONDU, SAISON, UNIVERS, WORDS, character };
+module.exports = { CHARS, CONFONDU, SAISON, UNIVERS, WORDS, SERIES, character };

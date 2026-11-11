@@ -97,7 +97,10 @@
         ${mrRow}
         <p class="subtitle">Mode :</p>
         <ul class="uc-order">${modeRows}</ul>
-        <p class="uc-wait">${s.voted}/${s.total} ont vote</p>
+        <p class="subtitle">Nombre d'undercovers (choix du host) :</p>
+        <div class="uc-under">${["auto"].concat(Array.from({ length: Math.min(3, s.maxUnder) }, (_, i) => i + 1)).map((v) =>
+          `<button class="uc-set-btn${String(s.nbUnder) === String(v) ? " on" : ""}" data-under="${v}">${v === "auto" ? "Auto" : v}</button>`).join("")}</div>
+        <p class="uc-wait">${s.voted}/${s.total} ont voté</p>
         <button id="btn-finalize" class="uc-btn">Lancer maintenant</button>`;
     } else if (s.phase === "distribution") {
       html = `<p class="uc-eyebrow">Dossier confidentiel${s.universe ? " — " + s.universe : ""}</p>
@@ -108,14 +111,14 @@
     } else if (s.phase === "clues") {
       html = `<p class="uc-eyebrow">Manche ${s.round}${s.universe ? " — " + s.universe : ""}</p>
         <h1 class="uc-title">Tour d'indices</h1>
-        <p class="subtitle">Chacun donne UN indice a l'oral, dans l'ordre.</p>
+        <p class="subtitle">Chacun donne UN indice à l'oral, dans l'ordre.</p>
         ${orderList(s, true)}
         <button id="btn-vote" class="uc-btn">Passer au vote</button>${cheatBar()}`;
     } else if (s.phase === "vote") {
       html = `<p class="uc-eyebrow">Manche ${s.round}</p>
         <h1 class="uc-title">${s.tie ? "Égalité !" : "Vote"}</h1>
         ${s.tie ? `<p class="subtitle">Revote entre ${s.tie.map((t) => esc(t.name)).join(" et ")}</p>` : ""}
-        <p class="subtitle">${s.votesCount}/${s.votesNeeded} ont vote</p>
+        <p class="subtitle">${s.votesCount}/${s.votesNeeded} ont voté</p>
         ${orderList(s, false)}
         <button id="btn-resolve" class="uc-btn ghost">Forcer la révélation</button>${cheatBar()}`;
     } else if (s.phase === "mrwhite") {
@@ -124,7 +127,9 @@
         <p class="subtitle">Dernière chance : il tente de deviner le mot des civils, devant tout le monde…</p>${cheatBar()}`;
     } else if (s.phase === "reveal") {
       let txt;
-      if (s.mrwhiteGuessResult) {
+      if (s.mrwhiteGuessResult && s.mrwhiteGuessResult.left) {
+        txt = `Mr. White a quitté la partie sans deviner : il est éliminé.`;
+      } else if (s.mrwhiteGuessResult) {
         txt = s.mrwhiteGuessResult.correct
           ? `Mr. White a deviné « <strong>${esc(s.mrwhiteGuessResult.guess)}</strong> » — CORRECT ! Il vole la victoire.`
           : `Mr. White a proposé « <strong>${esc(s.mrwhiteGuessResult.guess)}</strong> » — raté. Il est éliminé.`;
@@ -139,7 +144,12 @@
       html = endScreen(s);
     }
 
+    // someone left the game: say it (20 s), instead of a silent change
+    if (s.lastLeft && s.phase !== "settings" && Date.now() - s.lastLeft.at < 20000) {
+      html = `<p class="uc-notice">${esc(s.lastLeft.name)} a quitté la partie.</p>` + html;
+    }
     root.innerHTML = html;
+    root.querySelectorAll("[data-under]").forEach((b) => (b.onclick = () => send("setUndercovers", { value: b.dataset.under })));
     bind("btn-finalize", () => send("finalizeSettings"));
     bind("btn-begin", () => send("beginClues"));
     bind("btn-vote", () => send("toVote"));
@@ -153,6 +163,7 @@
 
   function endScreen(s) {
     const winTxt = s.winner === "civils" ? "Les Civils l'emportent !" : "Les Imposteurs l'emportent !";
+    const leftTxt = s.lastLeft ? `<p class="uc-notice">${esc(s.lastLeft.name)} a quitté la partie.</p>` : "";
     let secret;
     if (s.pair.kind === "word") {
       secret = `<div class="uc-pair"><span>Mot des civils : <strong>${esc(s.pair.civil)}</strong></span>
@@ -168,7 +179,7 @@
     const rolesList = (s.finalRoles || []).map((r) =>
       `<li class="uc-player">${esc(r.name)} — ${ucRoleLabel(r.role)}</li>`).join("");
     return `<p class="uc-eyebrow">Fin de partie</p>
-      <h1 class="uc-title">${winTxt}</h1>${secret}
+      <h1 class="uc-title">${winTxt}</h1>${leftTxt}${secret}
       <ul class="uc-order">${rolesList}</ul>
       <button id="btn-replay" class="uc-btn">Rejouer (nouveau vote de mode)</button>`;
   }

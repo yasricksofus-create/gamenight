@@ -32,25 +32,33 @@ window.applyUcTheme = function (key) {
 // Fetch a character's image URL from AniList (browser-side; the sandbox can't,
 // but real browsers and the Render server can). Cached; returns null on failure.
 const _ucImgCache = {};
-window.ucAnimeImage = async function (name) {
-  if (_ucImgCache[name] !== undefined) return _ucImgCache[name];
+// series = words of the character's series title ("fairytail", "chainsawman|csm"):
+// AniList gives up to 10 characters with that name, we keep the one who appears
+// in that series (before, "Happy" or "Power" could show a stranger).
+window.ucAnimeImage = async function (name, series) {
+  const key = name + "|" + (series || "");
+  if (_ucImgCache[key] !== undefined) return _ucImgCache[key];
+  const flat = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g, "");
   try {
     const res = await fetch("https://graphql.anilist.co", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({
-        query: "query($s:String){Character(search:$s){image{large}}}",
+        query: "query($s:String){Page(perPage:10){characters(search:$s){image{large} media(perPage:6){nodes{title{romaji english}}}}}}",
         variables: { s: name },
       }),
     });
     const j = await res.json();
-    const url = j && j.data && j.data.Character && j.data.Character.image
-      ? j.data.Character.image.large : null;
-    _ucImgCache[name] = url || null;
+    const list = (j && j.data && j.data.Page && j.data.Page.characters) || [];
+    const words = String(series || "").split("|").filter(Boolean);
+    const inSeries = (c) => (c.media && c.media.nodes || []).some((m) =>
+      words.some((w) => flat(m.title && m.title.romaji).includes(w) || flat(m.title && m.title.english).includes(w)));
+    const best = (words.length && list.find(inSeries)) || (words.length ? null : list[0]);
+    _ucImgCache[key] = (best && best.image && best.image.large) || null;
   } catch (e) {
-    _ucImgCache[name] = null;
+    _ucImgCache[key] = null;
   }
-  return _ucImgCache[name];
+  return _ucImgCache[key];
 };
 
 window.ucRoleLabel = function (role) {

@@ -17,3 +17,5 @@ jobs:
         run: node test-kietkoutsa.js
       - name: Cascade + Undercover bots and tie revote
         run: node test-games.js
+      - name: Engine (real connections)
+        run: node test-engine.js

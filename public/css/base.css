@@ -398,6 +398,10 @@ body {
 }
 /* end of game: rate the pair (👍 / 👎) */
 .uc-rate { margin-top: 1rem; }
+/* "X a quitté la partie" and similar one-line notices */
+.uc-notice { margin: 0.6rem auto; padding: 0.5rem 0.9rem; max-width: 32rem; border-radius: 10px; background: rgba(255, 213, 74, 0.15); border: 1px solid rgba(255, 213, 74, 0.5); text-align: center; }
+/* host: number of undercovers */
+.uc-under { display: flex; gap: 0.5rem; justify-content: center; flex-wrap: wrap; margin-bottom: 0.6rem; }
 .uc-rate-btns { display: flex; gap: 0.6rem; justify-content: center; flex-wrap: wrap; }
 .uc-rate-btns .uc-btn { background: rgba(255, 255, 255, 0.08); border: 2px solid rgba(255, 255, 255, 0.25); min-height: 48px; }
 .uc-rate-btns .uc-btn.on { background: linear-gradient(135deg, var(--primary), var(--secondary)); border-color: transparent; }
