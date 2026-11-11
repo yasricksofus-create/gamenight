@@ -1,6 +1,8 @@
 // test-engine.js -- Tests of the GENERIC engine through real connections
 // (a host and phones talking to the server like browsers do). Run: node test-engine.js
 process.env.PORT = process.env.PORT || "3990";
+process.env.GRACE_MS = "400";            // short grace delay for the tests
+process.env.FEEDBACK_KEY = process.env.FEEDBACK_KEY_TEST || "";
 const assert = require("assert");
 require("./server.js");
 const { gameModules } = require("./engine/games-loader");
@@ -66,6 +68,96 @@ async function room(gameId, names) {
     p2.emit("player:reconnect", { code, seatId: ps[0].seat });
     await once(p2, "reconnect:success"); await told2;
     [h, h2, p2, ...ps].forEach((s) => s.close());
+  });
+
+  await test("ready button, host removes a player", async () => {
+    const { h, ps } = await room("undercover", ["A", "B"]);
+    await wait(150); // let the "X joined" updates arrive first
+    let up = once(h, "room:playersUpdate");
+    ps[0].emit("player:ready", { ready: true });
+    assert.ok((await up).players.find((p) => p.name === "A").ready);
+    const kicked = once(ps[1], "room:kicked");
+    up = once(h, "room:playersUpdate");
+    h.emit("host:kick", { seatId: ps[1].seat });
+    await kicked;
+    assert.deepStrictEqual((await up).players.map((p) => p.name), ["A"]);
+    [h, ...ps].forEach((s) => s.close());
+  });
+
+  await test("joining during a game = spectator, then plays after « retour au hall »", async () => {
+    const { h, ps, code } = await room("undercover", ["A", "B", "C"]);
+    h.emit("host:startGame"); await wait(150);
+    const late = client();
+    late.emit("player:join", { code, name: "Late" });
+    const j = await once(late, "join:success");
+    assert.strictEqual(j.spectator, true);
+    // a spectator's actions are ignored by the engine
+    let touched = false;
+    const real = gameModules.undercover.handle;
+    gameModules.undercover.handle = function (api, actor) { if (actor.seatId === j.seatId) touched = true; return real.apply(this, arguments); };
+    late.emit("game:action", { type: "voteSetting", payload: { key: "mode", value: "classique" } });
+    await wait(150);
+    gameModules.undercover.handle = real;
+    assert.strictEqual(touched, false);
+    const stopped = once(late, "game:stopped");
+    const up = once(h, "room:playersUpdate");
+    h.emit("host:backToLobby");
+    await stopped;
+    assert.ok((await up).players.every((p) => !p.spectator));
+    [h, late, ...ps].forEach((s) => s.close());
+  });
+
+  await test("a player removed after the delay takes their place back with the same name", async () => {
+    const { h, ps, code } = await room("kietkoutsa", ["A", "B", "C"]);
+    const seat = ps[2].seat;
+    ps[2].close();
+    await wait(700); // grace = 400 ms in the tests
+    const again = client();
+    again.emit("player:join", { code, name: "c" }); // same name, other case
+    const j = await once(again, "join:success");
+    assert.strictEqual(j.seatId, seat);
+    assert.strictEqual(j.back, true);
+    [h, again, ...ps.slice(0, 2)].forEach((s) => s.close());
+  });
+
+  await test("pause blocks the players' actions; change of game keeps the room", async () => {
+    const { h, ps, code } = await room("undercover", ["A", "B", "C"]);
+    h.emit("host:startGame"); await wait(150);
+    const seen = [];
+    const real = gameModules.undercover.handle;
+    gameModules.undercover.handle = function (api, actor, r, type) { seen.push(type); return real.apply(this, arguments); };
+    const paused = once(ps[0], "room:paused");
+    h.emit("host:pause", { paused: true });
+    assert.strictEqual((await paused).paused, true);
+    ps[0].emit("game:action", { type: "voteSetting", payload: { key: "mode", value: "classique" } });
+    await wait(150);
+    assert.deepStrictEqual(seen, []);
+    h.emit("host:pause", { paused: false }); await wait(100);
+    ps[0].emit("game:action", { type: "voteSetting", payload: { key: "mode", value: "classique" } });
+    await wait(150);
+    gameModules.undercover.handle = real;
+    assert.deepStrictEqual(seen, ["voteSetting"]);
+    const changed = once(ps[1], "room:gameChanged");
+    h.emit("host:changeGame", { gameId: "cascade" });
+    assert.strictEqual((await changed).game.id, "cascade");
+    const p2 = client(); // still the same room code, still the same players
+    p2.emit("player:reconnect", { code, seatId: ps[1].seat });
+    const r = await once(p2, "reconnect:success");
+    assert.strictEqual(r.game.id, "cascade");
+    [h, p2, ...ps].forEach((s) => s.close());
+  });
+
+  await test("the host screen can be handed to a player", async () => {
+    const { h, ps, code } = await room("undercover", ["A"]);
+    const offer = once(ps[0], "host:offer");
+    h.emit("host:transfer", { seatId: ps[0].seat });
+    const o = await offer;
+    assert.strictEqual(o.code, code);
+    const newHost = client();
+    const told = once(h, "host:transferred");
+    newHost.emit("host:reconnect", { code, hostToken: o.token });
+    await once(newHost, "host:reconnected"); await told;
+    [h, newHost, ...ps].forEach((s) => s.close());
   });
 
   await test("room creation is limited per address", async () => {

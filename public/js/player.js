@@ -42,6 +42,7 @@ function identify() {
   else if (name) socket.emit("player:join", { code, name, avatar: myAvatar(), hostDevice: isHostDevice() });
   else showError("Pseudo manquant.");
 }
+// (the game's start also ends spectating: everyone in the room plays)
 socket.on("connect", identify);
 if (socket.connected) identify();
 
@@ -72,17 +73,82 @@ function showGame() {
   document.getElementById("game-root").classList.remove("hidden");
 }
 
-socket.on("join:success", ({ game, you, seatId, inGame }) => {
+socket.on("join:success", ({ game, you, seatId, inGame, spectator, back }) => {
   remember(seatId);
   setup(game, you.name);
+  setSpectator(spectator, back);
   // inGame = we arrived while a game was already running (games that allow it)
   if (inGame) showGame(); else showConnected();
 });
 
-socket.on("reconnect:success", ({ game, you, seatId, inGame }) => {
+socket.on("reconnect:success", ({ game, you, seatId, inGame, spectator, paused }) => {
   remember(seatId);
   setup(game, you.name);
+  setSpectator(spectator);
+  setPaused(paused);
   if (inGame) showGame(); else showConnected();
+});
+
+// ----- spectator: arrived during a game that cannot seat late players -----
+function setSpectator(on, back) {
+  const card = document.getElementById("waiting-text");
+  const rb = document.getElementById("ready-btn");
+  if (rb) rb.hidden = !!on;
+  if (!card) return;
+  card.textContent = on
+    ? "Une partie est en cours : tu la regardes sur l'écran du host et tu joues dès la prochaine."
+    : (back ? "Te revoilà ! Tu as retrouvé ta place." : "Regarde l'écran du host. La partie va bientôt commencer.");
+}
+
+// ----- "Prêt" button (lobby) -----
+let iAmReady = false;
+document.getElementById("ready-btn").addEventListener("click", () => {
+  iAmReady = !iAmReady;
+  socket.emit("player:ready", { ready: iAmReady });
+  const b = document.getElementById("ready-btn");
+  b.textContent = iAmReady ? "✓ Prêt !" : "Je suis prêt";
+  b.classList.toggle("on", iAmReady);
+});
+
+// ----- pause decided by the host (any game) -----
+function setPaused(p) {
+  let o = document.getElementById("gn-pause");
+  if (!p) { if (o) o.remove(); return; }
+  if (!o) {
+    o = document.createElement("div");
+    o.id = "gn-pause"; o.className = "gn-pause-player"; o.setAttribute("role", "status");
+    o.innerHTML = "<div><p class='gn-pause-title'>⏸ Pause</p><p>Le host a mis la partie en pause.</p></div>";
+    document.body.appendChild(o);
+  }
+}
+socket.on("room:paused", ({ paused }) => setPaused(paused));
+
+// ----- back to the lobby / another game: reload (same seat, clean page) -----
+socket.on("game:stopped", () => { window.gnReplaced = true; location.reload(); });
+socket.on("room:gameChanged", () => { window.gnReplaced = true; location.reload(); });
+
+// ----- the host removed me -----
+socket.on("room:kicked", () => {
+  try { localStorage.removeItem("gn_seat_" + code); } catch (e) {}
+  window.gnReplaced = true; socket.disconnect();
+  showError("Le host t'a retiré de la salle.");
+});
+
+// ----- the host offers me the shared screen -----
+socket.on("host:offer", ({ code: c, gameId, token }) => {
+  let o = document.getElementById("gn-offer");
+  if (o) o.remove();
+  o = document.createElement("div");
+  o.id = "gn-offer"; o.className = "gn-offer";
+  const url = "/host.html?game=" + encodeURIComponent(gameId) + "&room=" + encodeURIComponent(c);
+  o.innerHTML = `<p><b>👑 Le host te propose de prendre l'écran de la partie.</b></p>
+    <p class="hint">Ouvre-le sur l'ordinateur ou la télé qui sera partagé(e) (ce bouton ouvre un nouvel onglet ; ta place de joueur reste ici).</p>
+    <a class="avatar-edit-btn" target="_blank" rel="noopener" href="${url}">Ouvrir l'écran host</a>
+    <button type="button" class="avatar-edit-btn">Non merci</button>`;
+  // the new host key is stored BEFORE the tab opens, so it reconnects as host
+  o.querySelector("a").addEventListener("click", () => { try { localStorage.setItem("gn_host_" + c, token); } catch (e) {} setTimeout(() => o.remove(), 300); });
+  o.querySelector("button").onclick = () => o.remove();
+  document.body.appendChild(o);
 });
 
 // Seat is gone (grace expired, room closed...) -> try a fresh join if we can.
@@ -131,7 +197,7 @@ socket.on("rename:ok", ({ name: n }) => {
 socket.on("rename:error", ({ message }) => { const h = document.getElementById("rename-hint"); if (h) h.textContent = message; });
 
 socket.on("game:cheat", ({ cheat }) => showCheatEffect(cheat));
-socket.on("game:started", showGame);
+socket.on("game:started", () => { setSpectator(false); showGame(); });
 socket.on("join:error", ({ message }) => {
   if (hadSeat && /n'existe pas/.test(message)) {
     // the room disappeared (usually: the site restarted for an update)

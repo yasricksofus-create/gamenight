@@ -981,6 +981,14 @@ module.exports = {
     }
   },
 
+  // The host paused / resumed with the ENGINE's pause (any game): freeze the song
+  // (same as the old in-game pause). Outside a song or its reveal, nothing to freeze.
+  onPause(api, room, paused) {
+    const s = room.gameState;
+    if (!s || (s.phase !== "playing" && s.phase !== "reveal")) return;
+    if (!!s.paused !== !!paused) module.exports.handle(api, { isHost: true, seatId: null }, room, paused ? "pause" : "resume", {});
+  },
+
   // A player (or the host) changed their avatar or their name in the engine.
   onPlayerUpdate(api, room, seatId) {
     const s = room.gameState;

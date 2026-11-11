@@ -179,16 +179,19 @@ async function test(name, fn) {
     t.act("host", "finalizeSettings"); t.act("host", "beginClues"); t.act("host", "toVote");
     const s = t.s();
     const civ = Object.keys(s.roles).filter((id) => s.roles[id] === "civil");
-    const [x, y] = civ;
-    // everyone but x votes; one of them votes FOR x; then x leaves
+    const [x, T, Q] = civ;            // x will leave; most votes go to T; T votes Q
     const others = Object.keys(s.roles).filter((id) => id !== x);
-    others.forEach((id, i) => t.act(id, "vote", { targetId: i === 0 ? x : (id === y ? others[1] : y) }));
+    const forX = others.find((id) => id !== T); // this one votes for x (before x leaves)
+    others.forEach((id) => {
+      if (id === forX) t.act(id, "vote", { targetId: x });
+      else if (id === T) t.act(id, "vote", { targetId: Q });
+      else t.act(id, "vote", { targetId: T });
+    });
     t.room.players = t.room.players.filter((p) => p.seatId !== x);
     undercover.onPlayerLeave(t.api, t.room, x);
-    assert.ok(t.log.some((l) => l[1] === "uc:revote"), "whoever voted for the leaver must revote");
+    assert.ok(t.log.some((l) => l[0] === forX && l[1] === "uc:revote"), "whoever voted for the leaver must revote");
     assert.strictEqual(s.phase, "vote");
-    const again = others.find((id) => !s.votes[id]);
-    t.act(again, "vote", { targetId: others.find((o) => o !== again) });
+    t.act(forX, "vote", { targetId: T });
     assert.notStrictEqual(s.phase, "vote", "all remaining votes in -> counted");
     assert.strictEqual(s.lastLeft.name, t.s().names[x]);
     // Mr. White leaves while guessing

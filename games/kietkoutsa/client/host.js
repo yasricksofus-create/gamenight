@@ -147,21 +147,15 @@
     window.kktChromeSync = sync;
     render();
   }
-  // ---------- pause, fullscreen, keyboard shortcuts, hidden cursor ----------
-  function togglePause() {
-    if (!state || (state.phase !== "playing" && state.phase !== "reveal")) return kktToast("La pause marche pendant une manche.");
-    send(state.paused ? "resume" : "pause");
-  }
-  function fullscreen() {
-    const d = document;
-    if (d.fullscreenElement) { if (d.exitFullscreen) d.exitFullscreen(); return; }
-    const el = d.documentElement;
-    const f = el.requestFullscreen || el.webkitRequestFullscreen;
-    if (f) { try { f.call(el); } catch (e) {} }
-  }
+  // ---------- pause, fullscreen, keyboard shortcuts ----------
+  // Pause, full screen and the hidden mouse pointer now come from the ENGINE
+  // (public/js/host-tools.js, the same for every game). The engine tells this
+  // game through onPause, which freezes the song (see server.js).
+  function togglePause() { if (window.GN) GN.togglePause(); }
+  function fullscreen() { if (window.GN) GN.fullscreen(); }
   function showKeys() {
-    kktModal("Raccourcis clavier", `<p><b>Espace</b> : pause / reprendre</p><p><b>N</b> ou <b>→</b> : manche suivante / passer</p>
-      <p><b>F</b> : plein écran</p><p><b>C</b> : contraste élevé</p><p><b>R</b> : réécouter le début du son (pendant la révélation)</p><p><b>?</b> : cette aide</p>`);
+    kktModal("Raccourcis clavier", `<p><b>Espace</b> ou <b>P</b> : pause / reprendre</p><p><b>N</b> ou <b>→</b> : manche suivante / passer</p>
+      <p><b>F</b> : plein écran</p><p><b>C</b> : contraste élevé</p><p><b>R</b> : réécouter le début du son (pendant la révélation)</p>`);
   }
   document.addEventListener("keydown", (e) => {
     const t = e.target;
@@ -170,15 +164,9 @@
     const k = e.key.toLowerCase();
     if (k === " ") { e.preventDefault(); togglePause(); }
     else if (k === "n" || k === "arrowright") { if (state.phase === "reveal") send("next"); else if (state.phase === "ended" && !wrapped.done) wrappedGo(wrapped.idx + 1); }
-    else if (k === "f") fullscreen();
     else if (k === "c") kktToast(kktContrast.toggle() ? "Contraste élevé activé" : "Contraste normal");
     else if (k === "r" && state.phase === "reveal") replayTen();
-    else if (k === "?") showKeys();
   });
-  // the mouse pointer disappears after 3 s without moving (it is a TV screen)
-  let cursorT = null;
-  const wakeCursor = () => { document.body.classList.remove("kkt-nocursor"); clearTimeout(cursorT); cursorT = setTimeout(() => document.body.classList.add("kkt-nocursor"), 3000); };
-  document.addEventListener("mousemove", wakeCursor); wakeCursor();
   // the end-of-game slideshow waits while the tab is hidden
   document.addEventListener("visibilitychange", () => {
     if (!state || state.phase !== "ended" || wrapped.done) return;
@@ -300,11 +288,11 @@
     let b = document.getElementById("kkt-banners");
     if (!b) { b = document.createElement("div"); b.id = "kkt-banners"; b.className = "kkt-banners"; document.body.appendChild(b); }
     const off = (s.players || []).filter((p) => p.connected === false && !p.ghost && p.id !== ME).map((p) => p.name);
-    const html = (s.paused ? `<div class="kkt-banner gold kkt-pausebar">⏸ PAUSE — <button class="kkt-btn sm" id="kkt-resume-b">Reprendre</button></div>` : "") +
+    const html = '' + // (the pause banner is the engine's now)
       (off.length && s.phase !== "ended" ? `<div class="kkt-banner">📵 Déconnecté(e) : ${off.map(kktEsc).join(", ")} — le jeu continue, il/elle peut revenir avec le même lien.</div>` : "");
     if (b._h !== html) {
       b._h = html; b.innerHTML = html;
-      const r = b.querySelector("#kkt-resume-b"); if (r) r.onclick = () => send("resume");
+
     }
     b.hidden = !html || root.classList.contains("hidden");
   }

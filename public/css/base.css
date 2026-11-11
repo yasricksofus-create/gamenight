@@ -26,6 +26,10 @@ body {
 .hidden {
   display: none !important;
 }
+/* the HTML "hidden" attribute always wins (a "display: flex" rule used to beat it) */
+[hidden] {
+  display: none !important;
+}
 
 /* ---------- Homepage ---------- */
 .home {
@@ -663,3 +667,39 @@ body {
   background:rgba(10,4,20,.92);color:#fff;border:2px solid #22e0ff;border-radius:999px;padding:6px 16px 6px 8px;font:700 16px system-ui,sans-serif;
   box-shadow:0 0 20px rgba(34,224,255,.4);transition:opacity .5s,transform .5s}
 .gn-welcome.out{opacity:0;transform:translateX(-50%) translateY(-10px)}
+
+/* ===== Engine tools (all games) ===== */
+/* lobby list: ✓ prêt, host buttons (✕ remove, 👑 give the screen) */
+.player-li .pl-name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.player-li .pl-ready { font-size: 0.8rem; font-weight: 700; color: #4ade80; }
+.player-li .pl-tools { display: inline-flex; gap: 6px; }
+.pl-btn { font: inherit; font-size: 0.85rem; min-width: 40px; min-height: 36px; border-radius: 8px; border: 1px solid rgba(255,255,255,.25); background: rgba(255,255,255,.08); color: inherit; cursor: pointer; }
+.pl-btn:hover { background: rgba(255,255,255,.18); }
+.ready-btn { margin-top: 10px; font: inherit; font-weight: 700; min-height: 48px; padding: 0 22px; border-radius: 12px; border: 2px solid rgba(255,255,255,.35); background: transparent; color: inherit; cursor: pointer; }
+.ready-btn.on { background: #4ade80; border-color: #4ade80; color: #062b12; }
+/* host menu (bottom left, during a game) */
+.gn-tools { position: fixed; left: calc(12px + env(safe-area-inset-left, 0px)); bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 120; font-family: system-ui, sans-serif; }
+.gn-tools-btn { font: 600 14px system-ui, sans-serif; padding: 8px 14px; border-radius: 999px; border: 1px solid rgba(255,255,255,.3); background: rgba(10,6,20,.8); color: #fff; cursor: pointer; }
+.gn-tools-menu { position: absolute; left: 0; bottom: calc(100% + 8px); min-width: 230px; display: flex; flex-direction: column; gap: 4px; padding: 8px; border-radius: 12px; background: rgba(14,10,28,.96); border: 1px solid rgba(255,255,255,.18); color: #fff; box-shadow: 0 10px 30px rgba(0,0,0,.5); }
+.gn-tools-menu > button { font: 14px system-ui, sans-serif; text-align: left; padding: 9px 10px; border-radius: 8px; border: none; background: transparent; color: inherit; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+.gn-tools-menu > button:hover { background: rgba(255,255,255,.1); }
+.gn-tools-menu kbd { font: 12px ui-monospace, monospace; opacity: .7; }
+.gn-tools-game { display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; font-size: 13px; opacity: .9; }
+.gn-tools-game select { font: inherit; padding: 6px; border-radius: 6px; }
+.gn-tools-confirm { margin: 4px 0 0; padding: 8px 10px; border-radius: 8px; background: rgba(255,213,74,.15); font-size: 13px; }
+.gn-tools-confirm button { font: inherit; margin-left: 6px; padding: 4px 10px; border-radius: 6px; border: none; cursor: pointer; }
+body.gn-nocursor, body.gn-nocursor * { cursor: none !important; }
+/* pause (engine) */
+.gn-pause-host { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%); z-index: 130; padding: 10px 18px; border-radius: 999px; background: #ffd54a; color: #1a1030; font: 700 18px system-ui, sans-serif; box-shadow: 0 6px 24px rgba(0,0,0,.4); display: flex; gap: 12px; align-items: center; }
+.gn-pause-host button { font: inherit; font-size: 15px; padding: 6px 14px; border-radius: 999px; border: none; background: #1a1030; color: #fff; cursor: pointer; }
+.gn-pause-player { position: fixed; inset: 0; z-index: 190; display: flex; align-items: center; justify-content: center; text-align: center; padding: 24px; background: rgba(8,4,16,.86); color: #fff; font: 16px system-ui, sans-serif; }
+.gn-pause-player .gn-pause-title { font-size: 2rem; font-weight: 800; margin: 0 0 6px; }
+/* modal (shortcuts) + "take the screen" offer */
+.gn-modal { position: fixed; inset: 0; z-index: 160; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(5,2,12,.8); }
+.gn-modal-box { max-width: 420px; width: 100%; padding: 18px 20px; border-radius: 14px; background: #140c2a; color: #f3e9ff; font-family: system-ui, sans-serif; }
+.gn-modal-box h3 { margin: 0 0 10px; }
+.gn-modal-box kbd { font: 13px ui-monospace, monospace; padding: 1px 6px; border-radius: 4px; background: rgba(255,255,255,.12); }
+.gn-modal-ok { margin-top: 8px; font: inherit; font-weight: 700; padding: 8px 16px; border-radius: 8px; border: none; cursor: pointer; }
+.gn-offer { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 170; padding: 14px 16px; border-radius: 14px; background: #1b1235; color: #fff; border: 2px solid #ffd54a; box-shadow: 0 10px 30px rgba(0,0,0,.5); display: flex; flex-direction: column; gap: 8px; }
+.gn-offer p { margin: 0; }
+.gn-offer a { text-align: center; text-decoration: none; }

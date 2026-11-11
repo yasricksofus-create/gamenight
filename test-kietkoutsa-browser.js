@@ -160,14 +160,14 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   console.log("phone reload mid-round: OK");
   // PAUSE (space bar on the host): sound stops, countdowns freeze, phones see it
   await host.keyboard.press(" ");
-  await host.waitForSelector(".kkt-pausebar", { timeout: 4000 });
-  await phones[0].p.waitForSelector("#kkt-pause-b .kkt-banner", { timeout: 4000 });
+  await host.waitForSelector(".gn-pause-host:not([hidden])", { timeout: 4000 }); // engine pause (any game)
+  await phones[0].p.waitForSelector("#gn-pause", { timeout: 4000 });
   const c1 = await host.textContent("[data-countdown]");
   await wait(1600);
   const c2 = await host.textContent("[data-countdown]");
   const pausedPlaying = await host.evaluate(() => kktAudio.playing);
   if (c1 !== c2 || pausedPlaying) throw new Error("pause did not freeze the round (" + c1 + " -> " + c2 + ", playing " + pausedPlaying + ")");
-  await host.click("#kkt-resume-b");
+  await host.click(".gn-pause-host button");
   await wait(1500);
   const resumed = await host.evaluate(() => kktAudio.playing);
   console.log("pause / resume:", c1 === c2 && resumed ? "OK" : "FAIL");

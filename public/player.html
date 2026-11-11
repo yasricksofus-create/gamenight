@@ -13,7 +13,7 @@
   </head>
   <body class="room">
     <main class="room-main player-main">
-      <div id="loading">Connexion a la salle…</div>
+      <div id="loading">Connexion à la salle…</div>
 
       <!-- Shown once the player is in the room (on their phone) -->
       <div id="connected" class="hidden">
@@ -31,7 +31,8 @@
         </form>
         <div class="waiting-card">
           <p>✅ Tu es dans la salle <strong id="room-code"></strong> !</p>
-          <p class="subtitle">Regarde l'ecran du host. La partie va bientot commencer.</p>
+          <p class="subtitle" id="waiting-text">Regarde l'écran du host. La partie va bientôt commencer.</p>
+          <button id="ready-btn" type="button" class="ready-btn">Je suis prêt</button>
         </div>
         <section class="players">
           <h2>Joueurs (<span id="player-count">0</span>)</h2>
@@ -44,7 +45,7 @@
 
       <div id="error" class="hidden error-box">
         <p id="error-text"></p>
-        <a href="/" class="back-link">← Retour a l'accueil</a>
+        <a href="/" class="back-link">← Retour à l'accueil</a>
       </div>
     </main>
 

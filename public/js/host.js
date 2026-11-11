@@ -35,6 +35,7 @@ if (socket.connected) identify();
 
 // Fill the lobby scaffolding (code, game info, cheat console, start button).
 function setupLobby(code, game) {
+  currentCode = code;
   applyTheme(game.theme);
   // Pull in THIS game's board code (games/<id>/client/host.js) if not already.
   if (window.GameClient) GameClient.load(game.id, "host");
@@ -71,8 +72,8 @@ window.addEventListener("keydown", (e) => {
   if (k === "b") { e.preventDefault(); devMode = true; showBotButton(); }
   else if (k === "f") {
     e.preventDefault();
-    const key = prompt("Cle feedback :", "gamenight");
-    if (key) window.open("/admin/feedback?key=" + encodeURIComponent(key), "_blank");
+    // the admin page (rooms in progress + feedback); its password is FEEDBACK_KEY on Render
+    window.open("/admin", "_blank");
   }
 });
 
@@ -131,13 +132,52 @@ function renderCheatConsole(game) {
 socket.on("game:cheat", ({ cheat }) => showCheatEffect(cheat));
 
 let knownPlayers = null;
+let currentCode = roomParam;
 socket.on("room:playersUpdate", ({ players }) => {
-  renderPlayerList(players);
+  renderPlayerList(players, { host: true, onKick: kick, onTransfer: transfer });
+  // "3 / 4 prêts": a hint for the host, never blocking
+  const humans = players.filter((p) => !p.isBot && !p.spectator);
+  const ready = humans.filter((p) => p.ready).length;
+  const hint = document.getElementById("start-hint");
+  if (hint && !document.getElementById("lobby").classList.contains("hidden") && humans.length) {
+    hint.textContent = ready === humans.length ? "Tout le monde est prêt !" : ready + " / " + humans.length + " prêts — tu peux lancer quand tu veux.";
+  }
   // "👋 Léa est arrivée !" on the shared screen when someone new joins
   const names = players.map((p) => p.name);
   if (knownPlayers) players.filter((p) => !knownPlayers.includes(p.name) && !p.isBot).forEach((p) => welcome(p));
   knownPlayers = names;
 });
+// ✕ next to a player: a first tap asks "Sûr ?", the second removes them.
+function kick(p, btn) {
+  if (!btn.dataset.armed) {
+    btn.dataset.armed = "1"; btn.textContent = "Sûr ?";
+    setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = "✕"; } }, 3000);
+    return;
+  }
+  socket.emit("host:kick", { seatId: p.id });
+}
+// 👑 next to a player: their phone gets a button that opens the host screen.
+function transfer(p) {
+  socket.emit("host:transfer", { seatId: p.id });
+}
+socket.on("host:offerSent", ({ name }) => {
+  const h = document.getElementById("start-hint");
+  if (h) h.textContent = "👑 " + name + " a reçu un bouton pour prendre l'écran host. Cet écran s'arrêtera quand il l'ouvrira.";
+});
+socket.on("host:transferred", () => {
+  try { localStorage.removeItem("gn_host_" + (currentCode || roomParam)); } catch (e) {}
+  window.gnReplaced = true; socket.disconnect();
+  showError("L'écran host a été passé à un joueur : c'est son appareil qui affiche la partie maintenant.");
+});
+// Back to the lobby (game stopped) or another game in the same room: the page
+// RELOADS. It reconnects to the same room by itself (the key is kept), and every
+// trace of the previous game (its banners, panels, sounds) is gone for sure.
+socket.on("game:stopped", () => { window.gnReplaced = true; location.reload(); });
+socket.on("room:gameChanged", ({ game }) => {
+  history.replaceState(null, "", "?game=" + encodeURIComponent(game.id) + "&room=" + (currentCode || roomParam));
+  window.gnReplaced = true; location.reload();
+});
+
 function welcome(p) {
   const t = document.createElement("div");
   t.className = "gn-welcome";

@@ -187,7 +187,7 @@
       <div id="kkt-vp"></div><div id="kkt-guess-wrap"></div></div></div>`)) {
       if (s.settings.blind && you.ownedParts.length < s.parts.length) { document.getElementById("kkt-guess-wrap").innerHTML = kktGuessBox(s.parts.length > 1, you.ownedParts); kktWireGuess(send); }
     }
-    kktPatch("kkt-pause-b", s.paused ? `<div class="kkt-banner gold">⏸ Le host a mis la partie en pause.</div>` : "");
+    // (the pause screen on phones is the engine's now)
     root.querySelectorAll("[data-countdown]").forEach((el) => el.setAttribute("data-countdown", s.endsAt));
     root.querySelectorAll("[data-bar-end]").forEach((el) => el.setAttribute("data-bar-end", s.endsAt));
     if (s.settings.playback === "all" && !phoneMuted() && !s.paused) {

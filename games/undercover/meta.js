@@ -10,7 +10,7 @@ module.exports = {
   cheats: [
     { id: "reveal-role", label: "Révéler les rôles", emoji: "👁️", secret: true },
     { id: "redeal", label: "Relancer la distribution", emoji: "🔄" },
-    { id: "cancel-elim", label: "Annuler l'elimination", emoji: "↩️" },
+    { id: "cancel-elim", label: "Annuler l'élimination", emoji: "↩️" },
     { id: "revote", label: "Relancer le vote", emoji: "🗳️" },
   ],
 };
