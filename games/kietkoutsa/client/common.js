@@ -6,7 +6,6 @@
 //   kktPatch                           update a block only if its HTML changed
 //                                      (no flicker, inputs keep their focus)
 //   kktAudio                           synced playback of the 30s previews
-//   kktViz                             real audio visualiser (host screen)
 //   kktDrum                            synthesised drum roll (reveal)
 //   KktSearch                          search + suggestions + my picks
 //   kktVoteBlock / kktLeaderboard ...  reusable pieces of UI
@@ -103,9 +102,10 @@
   // time `at`. If we arrive late (reload, slow phone), we SEEK to the right
   // second so everybody hears the same thing at the same time.
   // On the host screen, the "viz" mode routes the preview through our own server
-  // (/api/music/preview) so the visualiser can analyse it; if that fails we fall
-  // back to the direct link automatically. If the direct link fails too, the
-  // `failed` callback tells the game (the host then asks to skip the song).
+  // (/api/music/preview) -- first made for the old equaliser, kept because it is
+  // the tested path; if that fails we fall back to the direct link automatically.
+  // If the direct link fails too, the `failed` callback tells the game (the host
+  // then asks to skip the song).
   // The search "preview" button uses its OWN player, so it never cuts a round.
   window.kktAudio = (function () {
     const els = {};
@@ -161,7 +161,6 @@
       if (a.readyState < 3) loading(true);
       if (a.readyState >= 1) seekTo(a, seg);
       else a.addEventListener("loadedmetadata", () => seekTo(a, seg), { once: true });
-      if (viz && window.kktViz) kktViz.attach(a);
       const p = a.play();
       if (p && p.catch) p.catch((err) => {
         if (err && err.name === "NotAllowedError") { if (onBlocked) onBlocked(); }
@@ -212,7 +211,7 @@
           if (cache.length > 4) { const old = cache.shift(); old.removeAttribute("src"); try { old.load(); } catch (e) {} }
         });
       },
-      stop() { clear(); segs = []; onFailed = null; onLate = null; loading(false); Object.values(els).forEach((a) => { try { a.pause(); } catch (e) {} }); musicFlag(); if (window.kktViz) kktViz.idle(); },
+      stop() { clear(); segs = []; onFailed = null; onLate = null; loading(false); Object.values(els).forEach((a) => { try { a.pause(); } catch (e) {} }); musicFlag(); },
       // "Réécouter 10 s": the start of a song again, on the search player
       replay(url, ms) {
         const a = el("search");
@@ -235,54 +234,6 @@
   })();
 
   document.addEventListener("visibilitychange", () => { if (!document.hidden) kktAudio.wake(); });
-
-  // ---------- real visualiser (host screen only) ----------
-  // Web Audio "AnalyserNode" = reads the frequencies of what is playing; we use
-  // them to drive the height of the neon equaliser bars in the background.
-  // 30 updates per second is plenty for the eye; nothing runs while the tab is
-  // hidden or when no music plays.
-  window.kktViz = (function () {
-    let analyser = null, data = null, attached = new WeakSet(), raf = 0, on = false, last = 0, bars = null;
-    function loop(t) {
-      raf = requestAnimationFrame(loop);
-      if (!analyser || document.hidden || t - last < 33) return;
-      last = t;
-      analyser.getByteFrequencyData(data);
-      if (!bars || !bars.length || !bars[0].isConnected) bars = document.querySelectorAll("#kkt-bg .kkt-eq span");
-      if (!bars.length) return;
-      const step = Math.max(1, Math.floor((data.length * 0.7) / bars.length));
-      let sum = 0;
-      bars.forEach((b, i) => {
-        const v = data[Math.min(data.length - 1, i * step)] / 255;
-        sum += v;
-        b.style.transform = "scaleY(" + (0.08 + v * 0.95).toFixed(3) + ")";
-      });
-      document.getElementById("kkt-bg").classList.toggle("live", sum > 0.5);
-    }
-    return {
-      attach(a) {
-        try {
-          const ctx = kktAudioCtx();
-          if (!ctx) return;
-          if (!analyser) {
-            analyser = ctx.createAnalyser();
-            analyser.fftSize = 128;
-            data = new Uint8Array(analyser.frequencyBinCount);
-            analyser.connect(ctx.destination);
-          }
-          if (ctx.state === "suspended") ctx.resume();
-          if (!attached.has(a)) { ctx.createMediaElementSource(a).connect(analyser); attached.add(a); }
-          if (!on) { on = true; raf = requestAnimationFrame(loop); }
-        } catch (e) { /* no visualiser: the CSS animation keeps running */ }
-      },
-      idle() {
-        on = false; cancelAnimationFrame(raf);
-        const bg = document.getElementById("kkt-bg");
-        if (bg) bg.classList.remove("live");
-        document.querySelectorAll("#kkt-bg .kkt-eq span").forEach((b) => (b.style.transform = ""));
-      },
-    };
-  })();
 
   // ---------- synthesised drum roll (no sound file needed) ----------
   window.kktDrum = function (ms) {
@@ -316,14 +267,12 @@
   // Seconds left until `at` (server time), never negative.
   window.kktLeft = function (at) { return Math.max(0, Math.ceil((at - kktNow()) / 1000)); };
 
-  // Animated neon background (an equalizer of bars behind everything). Built once.
+  // Fixed background layer behind everything (colour + screen lines, set in CSS).
+  // The moving equaliser bars were removed on 11 Nov 2026 (user request).
   function ensureBg() {
     if (document.getElementById("kkt-bg")) return;
     const bg = document.createElement("div");
     bg.id = "kkt-bg";
-    let bars = "";
-    for (let i = 0; i < 28; i++) bars += `<span style="animation-delay:${(i % 7) * 0.13}s;--h:${30 + (i * 37) % 55}%"></span>`;
-    bg.innerHTML = `<div class="kkt-bg-glow"></div><div class="kkt-eq">${bars}</div>`;
     document.body.appendChild(bg);
   }
 
@@ -533,11 +482,14 @@
 
   window.KktSearch = function (el, send) {
     let timer = null, seq = 0, list = [], you = { subs: [], perPlayer: 1 }, st = null, mineSig = "";
-    el.innerHTML = `<input class="kkt-search" placeholder="Rechercher un titre, un artiste…" autocomplete="off"/>
+    // Two columns on a wide screen (search ~2/3 left, my songs ~1/3 right),
+    // one column on a phone: see .kkt-picker in style.css.
+    el.innerHTML = `<div class="kkt-picker"><div class="kkt-pick-find">
+      <input class="kkt-search" placeholder="Rechercher un titre, un artiste…" autocomplete="off"/>
       <div class="kkt-chips"><button class="kkt-chip" data-random>🎲 Un son au hasard</button>${GENRES.map(([l, q]) => `<button class="kkt-chip" data-q="${kktEsc(q)}">${l}</button>`).join("")}</div>
-      <div class="kkt-results"></div>
-      <h3 class="kkt-h2">Mes morceaux <span class="kkt-pickc"></span></h3>
-      <div class="kkt-mine"></div>`;
+      <div class="kkt-results"></div></div>
+      <aside class="kkt-pick-mine"><h3 class="kkt-h2">Mes morceaux <span class="kkt-pickc"></span></h3>
+      <div class="kkt-mine"></div></aside></div>`;
     const q = el.querySelector(".kkt-search");
     const results = el.querySelector(".kkt-results");
     const mine = el.querySelector(".kkt-mine");

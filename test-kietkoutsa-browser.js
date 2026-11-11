@@ -131,6 +131,12 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await phones[1].p.click("[data-q='@charts']");
   await wait(400);
   await phones[0].p.screenshot({ path: path.join(SHOTS, "2-phone-submit.png"), fullPage: true });
+  // the same picker on a computer: search on the left, "Mes morceaux" on the right
+  { const vp = phones[1].p.viewportSize(); await phones[1].p.setViewportSize({ width: 1280, height: 800 }); await wait(250);
+    const cols = await phones[1].p.evaluate(() => { const f = document.querySelector(".kkt-pick-find"), m = document.querySelector(".kkt-pick-mine"); return f && m ? [f.getBoundingClientRect().left, m.getBoundingClientRect().left, f.getBoundingClientRect().width] : null; });
+    if (!cols || !(cols[1] > cols[0] + cols[2] - 1) || cols[2] < 600) throw new Error("picker should be two columns on a computer: " + JSON.stringify(cols));
+    await phones[1].p.screenshot({ path: path.join(SHOTS, "2-pc-submit.png") });
+    await phones[1].p.setViewportSize(vp); }
   await host.waitForFunction(() => { const b = document.getElementById("kkt-start"); return b && !b.disabled; });
   await host.screenshot({ path: path.join(SHOTS, "2-host-submit.png") });
   await host.click("#kkt-start");

@@ -7,26 +7,6 @@ body.room{background:transparent;}
   radial-gradient(circle at 20% 10%, #2a0b45 0%, rgba(42,11,69,0) 45%),
   radial-gradient(circle at 85% 20%, #06303f 0%, rgba(6,48,63,0) 40%),
   linear-gradient(160deg,#0a0618 0%,#07060f 60%,#0b0520 100%);}
-.kkt-bg-glow{position:absolute;inset:-20%;background:
-  radial-gradient(circle at 50% 120%, rgba(255,47,176,.22), rgba(255,47,176,0) 55%),
-  radial-gradient(circle at 20% 120%, rgba(34,224,255,.18), rgba(34,224,255,0) 50%);
-  animation:kkt-hue 14s linear infinite;}
-@keyframes kkt-hue{0%{filter:hue-rotate(0)}100%{filter:hue-rotate(360deg)}}
-.kkt-eq{position:absolute;left:0;right:0;bottom:0;height:34vh;display:flex;gap:6px;
-  align-items:flex-end;justify-content:center;opacity:.5;padding:0 2vw;}
-.kkt-eq span{flex:1;max-width:3.2%;height:var(--h);border-radius:6px 6px 0 0;
-  background:linear-gradient(180deg,var(--kkt-cyan),var(--kkt-mag));
-  transform-origin:bottom;animation:kkt-eq 1.1s ease-in-out infinite alternate;
-  box-shadow:0 0 12px rgba(255,47,176,.5);}
-#kkt-bg.live .kkt-eq span{animation:none;height:100%;transition:transform .08s linear;}
-#kkt-bg.live .kkt-eq{opacity:.62;}
-/* phones: no full-screen colour cycling (heavy for small GPUs) */
-@media (pointer: coarse), (max-width: 700px){.kkt-bg-glow{animation:none}}
-/* the equaliser only dances while music is actually playing */
-.kkt-eq span{animation-play-state:paused}
-body.kkt-music .kkt-eq span{animation-play-state:running}
-@keyframes kkt-eq{0%{transform:scaleY(.25)}100%{transform:scaleY(1)}}
-@media (prefers-reduced-motion: reduce){.kkt-eq span,.kkt-bg-glow{animation:none}}
 
 /* The game takes the WHOLE screen as its own scrolling layer. (The old
    "width:100vw" trick made phones scroll sideways.) Fixed buttons of the page
@@ -102,6 +82,17 @@ body.kkt-music .kkt-eq span{animation-play-state:running}
 .kkt-mine .kkt-res{border-color:rgba(255,47,176,.4);flex-wrap:wrap;}
 .kkt-mine .note{flex:1 1 100%;display:flex;gap:6px;}
 .kkt-mine .note input{flex:1;min-width:0;}
+/* music picker: one column on phones; from 820px wide, search on the left
+   (about 2/3) and "Mes morceaux" in a column on the right that stays in view
+   while the results scroll */
+.kkt-wrap-wide{max-width:1240px;}
+@media (min-width:820px){
+  .kkt-picker{display:grid;grid-template-columns:minmax(0,2fr) minmax(260px,1fr);gap:28px;align-items:start;}
+  .kkt-pick-mine{position:sticky;top:8px;max-height:calc(100vh - 140px);overflow-y:auto;padding:12px 14px;
+    background:rgba(255,255,255,.04);box-shadow:0 0 0 3px var(--px-line,#333);}
+  .kkt-pick-mine .kkt-h2{margin-top:0;}
+  .kkt-pick-mine .kkt-mine{margin-top:6px;}
+}
 .kkt-now{display:flex;flex-direction:column;align-items:center;gap:10px;margin:8px 0 16px;}
 .kkt-cover{width:min(58vw,250px);height:min(58vw,250px);border-radius:18px;object-fit:cover;
   background:#241543;box-shadow:0 0 44px rgba(255,47,176,.5),0 0 18px rgba(34,224,255,.4);}
@@ -261,10 +252,6 @@ body.kkt-nocursor, body.kkt-nocursor *{cursor:none !important}
   --px-display:"Press Start 2P","Courier New",monospace;--px-body:"Pixelify Sans",system-ui,sans-serif;}
 #kkt-bg{background:var(--px-night);}
 #kkt-bg::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 2px,transparent 2px 4px);}
-.kkt-bg-glow{display:none;}
-.kkt-eq{gap:8px;opacity:.35;}
-.kkt-eq span{border-radius:0;box-shadow:none;background:var(--kkt-mag);animation-timing-function:steps(4,end);}
-.kkt-eq span:nth-child(3n){background:var(--kkt-cyan);} .kkt-eq span:nth-child(4n){background:var(--kkt-gold);}
 .kkt-stage{color:var(--px-text);font-family:var(--px-body);font-size:1.05rem;}
 .kkt-stage *, .kkt-drawer, .kkt-drawer *, .kkt-drawer-btn, .kkt-toast, .kkt-secret *, .kkt-modal *, .kkt-banners *, .kkt-qr-corner{border-radius:0 !important;}
 .kkt-eyebrow{font-family:var(--px-display);font-size:.6rem;letter-spacing:.08em;color:var(--kkt-cyan);}
@@ -331,6 +318,9 @@ body.kkt-nocursor, body.kkt-nocursor *{cursor:none !important}
 .kkt-px-grid button.on{box-shadow:0 0 0 3px var(--kkt-mag);}
 .kkt-why span{background:var(--px-night);box-shadow:0 0 0 2px var(--kkt-gold);color:var(--kkt-gold);}
 body.kkt-audio-wait::after{border-radius:0;border:none;box-shadow:0 0 0 3px var(--kkt-cyan);background:var(--px-panel);font-family:var(--px-body);}
+/* host's secret panel: opaque (nothing shows through), pixel text, and room at
+   the top for the page's "Quitter" button */
+.kkt-secret{background:var(--px-night);font-family:var(--px-body);color:var(--px-text);padding-top:64px;}
 /* the QR code moves up: the engine's "⚙ Host" menu lives in the bottom-left corner */
 .kkt-qr-corner{bottom:64px;background:var(--px-panel);box-shadow:0 0 0 3px var(--px-line);}
 @media (max-width:560px){.kkt-title{font-size:1.25rem}.kkt-count.big{font-size:1.9rem}}

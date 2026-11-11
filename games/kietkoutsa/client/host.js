@@ -16,7 +16,7 @@
   let wrapped = { idx: 0, timer: null, done: false }, endTab = "score", lastPreload = "";
   kktInjectStyles();
   kktContrast.apply();
-  kktAudio.enableViz(true); // route previews through our server -> real visualiser
+  kktAudio.enableViz(true); // host screen: previews go through our server (fallback: direct link)
   let settingsLoaded = false, lastVoted = -1, savedEvening = false;
 
   // ----- sounds (optional files in games/kietkoutsa/sounds/) -----
@@ -124,7 +124,7 @@
 
     const sec = document.createElement("div");
     sec.id = "kkt-secret"; sec.className = "kkt-secret";
-    sec.innerHTML = `<div class="kkt-wrap"><div class="kkt-row" style="justify-content:space-between">
+    sec.innerHTML = `<div class="kkt-wrap kkt-wrap-wide"><div class="kkt-row" style="justify-content:space-between">
         <p class="kkt-eyebrow">🔒 Panneau secret du host — les autres, regardez ailleurs 👀</p>
         <button class="kkt-btn ghost sm" id="kkt-secret-close">Fermer</button></div>
       <div id="kkt-secret-body"></div><div id="kkt-secret-guess"></div><div id="kkt-secret-search"></div></div>`;

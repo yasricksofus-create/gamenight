@@ -145,7 +145,7 @@
 
   // ---------- SUBMIT ----------
   function renderSubmit(s) {
-    if (skeleton("submit", `<div class="kkt-stage"><div class="kkt-wrap">
+    if (skeleton("submit", `<div class="kkt-stage"><div class="kkt-wrap kkt-wrap-wide">
       <p class="kkt-eyebrow">Propositions · ${kktEsc(s.mode.emoji + " " + s.mode.label)}</p><h1 class="kkt-title">Choisis ta musique</h1>
       <div id="kkt-sub-info"></div>
       ${s.submitEndsAt ? `<p class="kkt-sub">Temps restant : <span class="kkt-count" data-countdown="${s.submitEndsAt}"></span></p>` : ""}
