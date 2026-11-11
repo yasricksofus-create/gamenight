@@ -66,3 +66,25 @@ window.ucRoleLabel = function (role) {
   if (role === "mrwhite") return "Mr. White";
   return "Civil";
 };
+
+// Phone vibration (Android; iPhones do not let websites vibrate).
+window.ucBuzz = function (pattern) {
+  try { if (navigator.vibrate && !document.hidden) navigator.vibrate(pattern || 80); } catch (e) {}
+};
+
+// "Comment jouer ?" pop-up (host screen and phones).
+window.ucHowTo = function () {
+  const old = document.getElementById("uc-howto");
+  if (old) { old.remove(); return; }
+  const m = document.createElement("div");
+  m.id = "uc-howto"; m.className = "uc-overlay show";
+  m.innerHTML = `<div class="uc-sheet" role="dialog" aria-modal="true" aria-label="Comment jouer">
+    <h2>Comment jouer ?</h2>
+    <p><b>1.</b> Chacun reçoit une carte secrète. Les <b>civils</b> ont tous la même ; l'<b>undercover</b> a une carte proche mais différente (et il ne sait pas qu'il est l'undercover !). <b>Mr. White</b> n'a rien.</p>
+    <p><b>2.</b> Chacun son tour, donne <b>un indice à l'oral</b> sur ta carte, sans la dire.</p>
+    <p><b>3.</b> Tout le monde vote : qui est l'imposteur ? Le plus voté est éliminé (et peut avoir une dernière parole).</p>
+    <p><b>4.</b> Les civils gagnent s'ils éliminent tous les imposteurs. Les imposteurs gagnent s'ils sont aussi nombreux que les civils. Mr. White éliminé peut voler la victoire en devinant la carte des civils.</p>
+    <button class="uc-btn" type="button">OK</button></div>`;
+  m.onclick = (e) => { if (e.target === m || e.target.tagName === "BUTTON") m.remove(); };
+  document.body.appendChild(m);
+};

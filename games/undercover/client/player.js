@@ -11,22 +11,47 @@
   let myVote = { mode: null, mrWhite: null }; // my settings choices (local)
   let rated = { key: null, up: null };          // my 👍/👎 on the pair of the game
   let leftMsg = "";                             // one-time notice (my vote target left)
+  let allCards = null;                          // every card, once I am eliminated
+  let buzzKey = "";                             // what I last vibrated for
+  let note = "";                                // one-line notice (proposal answers)
 
   socket.on("uc:you", (c) => { card = c; render(); });
   socket.on("uc:state", (s) => { state = s; if (s.themeKey) applyUcTheme(s.themeKey); render(); });
   socket.on("uc:voted", () => { votedSeq = state ? state.voteSeq : votedSeq; render(); });
   // the player I voted for left: my vote no longer counts, I vote again
   socket.on("uc:revote", ({ name }) => { votedSeq = -1; leftMsg = esc(name) + " est parti : vote à nouveau."; render(); });
+  socket.on("uc:allCards", (list) => { allCards = list; render(); });
+  socket.on("uc:proposed", ({ a, b }) => { note = "Paire envoyée au host : " + esc(a) + " / " + esc(b); render(); });
+  socket.on("uc:proposalAnswer", ({ a, b, ok }) => { note = (ok ? "✓ Le host a ajouté ta paire " : "✕ Le host n'a pas gardé ta paire ") + esc(a) + " / " + esc(b); render(); });
 
   function send(type, payload) { socket.emit("game:action", { type, payload }); }
   function myEntry() { return state ? state.order.find((p) => p.id === window.mySeatId) : null; }
 
-  function render() {
+  // The screen is redrawn at every update: what you were typing (a pair, Mr.
+  // White's guess), the cursor and the open/closed panels are kept across it.
+  function keepTyping(draw) {
+    const vals = {}, opens = {};
+    root.querySelectorAll("input[id], select[id]").forEach((x) => (vals[x.id] = x.value));
+    root.querySelectorAll("details[class]").forEach((d) => (opens[d.className] = d.open));
+    const a = document.activeElement, focusId = a && root.contains(a) ? a.id : null;
+    const sel = a && "selectionStart" in a ? [a.selectionStart, a.selectionEnd] : null;
+    draw();
+    Object.keys(vals).forEach((id) => { const x = document.getElementById(id); if (x && vals[id]) x.value = vals[id]; });
+    root.querySelectorAll("details[class]").forEach((d) => { if (d.className in opens) d.open = opens[d.className]; });
+    if (focusId) { const x = document.getElementById(focusId); if (x) { x.focus(); if (sel && x.setSelectionRange) try { x.setSelectionRange(sel[0], sel[1]); } catch (e) {} } }
+  }
+
+  function render() { keepTyping(draw); }
+  function draw() {
     if (!state) return;
     const s = state;
 
     // Settings vote phase happens BEFORE cards are dealt.
-    if (s.phase === "settings") { root.innerHTML = settingsHtml(s); wireSettings(s); return; }
+    if (s.phase === "settings") {
+      allCards = null;
+      root.innerHTML = settingsHtml(s) + proposeHtml() + (note ? `<p class="uc-notice">${note}</p>` : "");
+      wireSettings(s); wirePropose(); return;
+    }
     if (!card) return; // cards not dealt yet
 
     let html = cardHtml();
@@ -39,8 +64,23 @@
     if (s.phase === "distribution") {
       html += `<p class="uc-wait">Mémorise ta carte. En attente du host…</p>`;
     } else if (s.phase === "clues") {
-      html += `<p class="uc-wait">Écoute, et donne ton indice à l'oral à ton tour.</p>`;
+      const myTurn = s.speaker === window.mySeatId;
+      if (myTurn) {
+        html += `<p class="uc-turn-me">🎤 C'est ton tour ! Donne ton indice à l'oral.</p>`;
+        buzz("turn" + s.round + "-" + s.speaker, [120, 60, 120]);
+      } else {
+        const sp = s.order.find((p) => p.id === s.speaker);
+        html += `<p class="uc-wait">${sp ? "C'est au tour de <strong>" + esc(sp.name) + "</strong>." : "Écoute, et donne ton indice à l'oral à ton tour."}</p>`;
+      }
+      if (s.debateEndsAt) html += `<p class="uc-wait">Débat en cours, le vote s'ouvre tout seul.</p>`;
+    } else if (s.phase === "defense" && s.defense) {
+      html += s.defense.id === window.mySeatId
+        ? `<p class="uc-turn-me">⚖️ Tu es désigné ! Tu as 10 secondes pour te défendre à l'oral.</p>`
+        : `<p class="uc-wait"><strong>${esc(s.defense.name)}</strong> se défend… le host décide ensuite.</p>`;
+      if (s.defense.id === window.mySeatId) buzz("def" + s.round + s.voteSeq, [200, 80, 200]);
     } else if (s.phase === "vote") {
+      buzz("vote" + s.voteSeq, 90); // the vote is open
+      if (s.publicVotes && s.publicVotes.length) html += `<p class="uc-wait">${s.publicVotes.map(([a, b]) => esc(a) + " → " + esc(b)).join(" · ")}</p>`;
       if (!alive) html += `<p class="uc-wait">Tu es éliminé — tu observes le vote.</p>`;
       else if (votedSeq === s.voteSeq) html += `<p class="uc-wait">Vote enregistré. En attente…</p>`;
       else html += voteButtons(s);
@@ -78,9 +118,17 @@
           <div class="uc-rate-btns"><button class="uc-btn${rated.up === true ? " on" : ""}" data-rate="1">👍 Bien trouvée</button>
           <button class="uc-btn${rated.up === false ? " on" : ""}" data-rate="0">👎 Pas terrible</button></div></div>`;
       }
+      html += proposeHtml();
     }
+    // eliminated: I see every card (the show goes on)
+    if (allCards && !alive && s.phase !== "ended") {
+      html += `<details class="uc-all" open><summary>Tu es éliminé : voici les cartes de tout le monde</summary><ul class="uc-order">${allCards.map((c) =>
+        `<li class="uc-player${c.alive ? "" : " out"}">${esc(c.name)} — <b>${esc(c.role)}</b>${c.card && c.card.kind === "word" ? " : " + esc(c.card.word) : c.card && c.card.kind === "character" ? " : " + esc(c.card.character.name) : ""}</li>`).join("")}</ul></details>`;
+    }
+    if (note) html += `<p class="uc-notice">${note}</p>`;
 
     root.innerHTML = html;
+    wirePropose();
     root.querySelectorAll("[data-rate]").forEach((b) => (b.onclick = () => {
       rated.up = b.getAttribute("data-rate") === "1";
       root.querySelectorAll("[data-rate]").forEach((x) => x.classList.toggle("on", x === b));
@@ -104,8 +152,32 @@
     return `<p class="uc-eyebrow">Mise en place</p>
       <h1 class="uc-title">Vos réglages</h1>
       <p class="uc-wait">Choisis le mode :</p>
-      <div class="uc-vote-list">${modeBtns}</div>${mr}`;
+      <div class="uc-vote-list">${modeBtns}</div>${mr}
+      <button id="uc-howto-btn" class="uc-btn ghost" type="button">Comment jouer ?</button>`;
   }
+  // "Proposer une paire": sent to the host, who adds it (or not) to the game.
+  function proposeHtml() {
+    return `<details class="uc-propose"><summary>💡 Proposer une paire</summary>
+      <form id="uc-propose-form" class="uc-guess">
+        <input id="uc-pa" maxlength="40" placeholder="Mot ou perso 1" aria-label="Premier mot ou perso" autocomplete="off">
+        <input id="uc-pb" maxlength="40" placeholder="Mot ou perso 2" aria-label="Deuxième mot ou perso" autocomplete="off">
+        <select id="uc-pk" aria-label="Type de paire"><option value="word">Mots</option><option value="character">Persos d'anime</option></select>
+        <button class="uc-btn" type="submit">Envoyer</button></form></details>`;
+  }
+  function wirePropose() {
+    const f = document.getElementById("uc-propose-form");
+    const hb = document.getElementById("uc-howto-btn");
+    if (hb) hb.onclick = () => ucHowTo();
+    if (!f) return;
+    f.onsubmit = (e) => {
+      e.preventDefault();
+      const a = document.getElementById("uc-pa").value.trim(), b = document.getElementById("uc-pb").value.trim();
+      if (!a || !b) return;
+      send("proposePair", { a, b, kind: document.getElementById("uc-pk").value });
+      document.getElementById("uc-pa").value = ""; document.getElementById("uc-pb").value = "";
+    };
+  }
+  function buzz(key, pattern) { if (buzzKey !== key) { buzzKey = key; ucBuzz(pattern); } }
   function wireSettings(s) {
     root.querySelectorAll("[data-mode]").forEach((b) => {
       b.onclick = () => { myVote.mode = b.getAttribute("data-mode"); send("voteSetting", { key: "mode", value: myVote.mode }); render(); };

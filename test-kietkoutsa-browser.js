@@ -161,6 +161,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   // PAUSE (space bar on the host): sound stops, countdowns freeze, phones see it
   await host.keyboard.press(" ");
   await host.waitForSelector(".gn-pause-host:not([hidden])", { timeout: 4000 }); // engine pause (any game)
+  await host.waitForFunction(() => window.kktPausedAt > 0, null, { timeout: 4000 }); // the game froze its clock
   await phones[0].p.waitForSelector("#gn-pause", { timeout: 4000 });
   const c1 = await host.textContent("[data-countdown]");
   await wait(1600);

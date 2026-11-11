@@ -22,10 +22,25 @@ const MODES = [
   { key: "anime_confondu", label: "Anime mélangés", theme: "gold" },
   { key: "anime_saison", label: "Anime récents", theme: "gold" },
   { key: "univers", label: "Univers précis", theme: "ring" },
+  { key: "anime_hasard", label: "Anime au hasard", theme: "gold" },
+  { key: "best_of", label: "Best of (les paires les mieux notées)", theme: "ring" },
 ];
 
+// Options chosen by the HOST before dealing (remembered for the next game).
+const DEFAULT_OPTS = {
+  lastWord: true,     // 10 s of defence before an elimination
+  debateSec: 0,       // debate timer before the vote (0 = off)
+  votePublic: false,  // everyone sees who votes for whom, live
+  category: "all",    // Classique: word category
+  difficulty: "all",  // Classique: facile / normal / expert
+};
+const OPT_VALUES = {
+  lastWord: [true, false], debateSec: [0, 30, 60, 90], votePublic: [false, true],
+  category: ["all"].concat(Object.keys(anime.WORD_CATS), ["Perso"]), difficulty: ["all", "facile", "normal", "expert"],
+};
+
 // Words and characters now come as HAND-PICKED PAIRS (see data.js).
-const ALL_WORDS = [].concat(...anime.WORDS); // for a bot Mr. White's random guess
+const ALL_WORDS = [].concat(...anime.WORDS.map(([a, b]) => [a, b])); // for a bot Mr. White's random guess
 
 // ---------- pair memory (which pairs were played / disliked) ----------
 // Per room: pairs already played tonight (no repeat until all were seen) and
@@ -35,7 +50,13 @@ const ALL_WORDS = [].concat(...anime.WORDS); // for a bot Mr. White's random gue
 const GLOBAL_RATINGS = new Map(); // key -> { up, down }
 function memoryOf(room) {
   room.ucMemory = room.ucMemory || { seen: new Set(), ratings: new Map() };
-  return room.ucMemory;
+  const m = room.ucMemory;
+  m.opts = m.opts || Object.assign({}, DEFAULT_OPTS);
+  m.custom = m.custom || { word: [], character: [] };   // pairs proposed by players and accepted by the host
+  m.proposals = m.proposals || [];                       // waiting for the host's answer
+  m.scores = m.scores || {};                             // name -> points this evening
+  m.stats = m.stats || {};                               // name -> { impWins, goodVotes, mrwGuess }
+  return m;
 }
 function pairKey(a, b) { return [a, b].sort().join(" / "); }
 function isBadPair(room, key) {
@@ -178,24 +199,133 @@ function resolveVote(api, room) {
     return;
   }
   state.tieCandidates = null;
+  // round recap: who voted for whom (shown at the end of the game)
+  (state.voteLog = state.voteLog || []).push({
+    round: state.round,
+    votes: Object.keys(state.votes).map((v) => [state.names[v], state.names[state.votes[v]], isImpostor(state.roles[state.votes[v]])]),
+    out: top.length === 1 && max > 0 ? state.names[top[0]] : null,
+  });
+  Object.keys(state.votes).forEach((v) => { // "good votes" = votes on an impostor (evening stats)
+    if (isImpostor(state.roles[state.votes[v]])) bumpStat(room, state.names[v], "goodVotes");
+  });
 
   if (top.length === 1 && max > 0) {
     const id = top[0];
-    // Mr. White eliminated -> last-chance guess before anything is finalized.
-    if (state.roles[id] === "mrwhite") {
-      state.mrwhiteGuessing = id;
-      state.phase = "mrwhite";
+    // Last word: the designated player defends for 10 s, then the host
+    // confirms the elimination or asks for a new vote.
+    if (memoryOf(room).opts.lastWord) {
+      state.defense = { id, name: state.names[id], endsAt: Date.now() + 10000 };
+      state.phase = "defense";
       broadcastState(api, room);
       return;
     }
-    state.alive[id] = false;
-    state.lastEliminated = { id, name: state.names[id], role: state.roles[id] };
-  } else {
-    state.lastEliminated = null; // tie or no vote -> nobody eliminated
+    return eliminate(api, room, id);
   }
+  state.lastEliminated = null; // tie or no vote -> nobody eliminated
   checkWinner(state);
   state.phase = "reveal";
   broadcastState(api, room);
+}
+
+// The vote is final: this player is out (Mr. White first gets his guess).
+function eliminate(api, room, id) {
+  const state = room.gameState;
+  state.defense = null;
+  if (state.roles[id] === "mrwhite") { // last-chance guess before anything is finalized
+    state.mrwhiteGuessing = id;
+    state.phase = "mrwhite";
+    broadcastState(api, room);
+    return;
+  }
+  state.alive[id] = false;
+  state.lastEliminated = { id, name: state.names[id], role: state.roles[id] };
+  checkWinner(state);
+  state.phase = "reveal";
+  broadcastState(api, room);
+  sendAllCardsToDead(api, room);
+}
+
+// ---------- evening scores & stats (kept in the room between games) ----------
+function bumpStat(room, name, key, n) {
+  const st = memoryOf(room).stats;
+  st[name] = st[name] || { impWins: 0, goodVotes: 0, mrwGuess: 0 };
+  st[name][key] += n || 1;
+}
+// Called once, when a game ends: points of the evening.
+//   civils win: +1 each civil (+1 more if still alive)
+//   impostors win: +2 each impostor, +3 for a Mr. White who guessed the word
+function finishGame(room) {
+  const s = room.gameState;
+  if (!s || s.scored || !s.winner) return;
+  s.scored = true;
+  const sc = memoryOf(room).scores;
+  Object.keys(s.roles).forEach((id) => {
+    const name = s.names[id], role = s.roles[id];
+    let pts = 0;
+    if (s.winner === "civils" && role === "civil") pts = 1 + (s.alive[id] ? 1 : 0);
+    if (s.winner === "impostors" && isImpostor(role)) {
+      pts = role === "mrwhite" && s.mrwhiteGuessResult && s.mrwhiteGuessResult.correct ? 3 : 2;
+      bumpStat(room, name, "impWins");
+    }
+    if (role === "mrwhite" && s.mrwhiteGuessResult && s.mrwhiteGuessResult.correct) bumpStat(room, name, "mrwGuess");
+    sc[name] = (sc[name] || 0) + pts;
+  });
+}
+function eveningRecap(room) {
+  const m = memoryOf(room);
+  const scores = Object.keys(m.scores).map((n) => ({ name: n, pts: m.scores[n] })).sort((a, b) => b.pts - a.pts);
+  const best = (key) => {
+    const l = Object.keys(m.stats).filter((n) => m.stats[n][key] > 0).sort((a, b) => m.stats[b][key] - m.stats[a][key]);
+    return l.length ? { name: l[0], n: m.stats[l[0]][key] } : null;
+  };
+  return { scores, impostor: best("impWins"), detective: best("goodVotes"), mrwhite: best("mrwGuess") };
+}
+
+// The eliminated see every card (they are out, they can enjoy the show),
+// except on the host's own phone (the host also runs the shared screen).
+function sendAllCardsToDead(api, room) {
+  const s = room.gameState;
+  if (!s || !s.cards) return;
+  const players = api.players();
+  const all = s.order.map((id) => ({ name: s.names[id], role: roleLabel(s.roles[id]), card: s.cards[id], alive: !!s.alive[id] }));
+  players.forEach((p) => {
+    if (s.alive[p.id] === false && !p.hostDevice) api.toPlayer(p.id, "uc:allCards", all);
+  });
+}
+
+// ---------- clue turns: who speaks now ----------
+function startClueTurn(api, room) {
+  const s = room.gameState;
+  s.speakerIdx = 0;
+  s.clues = {};
+  s.debateEndsAt = null;
+  scheduleBotClue(api, room);
+}
+function speakingOrder(s) { return s.order.filter((id) => s.alive[id]); }
+// A bot "says" a short clue: a piece of its character's description, or the
+// category of its word (honest but vague). Mr. White bluffs with something vague.
+function botClue(s, id) {
+  const card = s.cards[id];
+  if (!card || card.kind === "mrwhite") return pick(["Hmm… c'est connu.", "Je dirais : populaire.", "Ça me parle !", "On en parle souvent."]);
+  if (card.kind === "character") {
+    const bits = String(card.character.desc || "").split(/[,.]/).map((x) => x.trim()).filter((x) => x.length > 3);
+    return bits.length ? pick(bits) : "Un perso connu";
+  }
+  return s.pair && s.pair.category ? "Catégorie : " + s.pair.category.toLowerCase() : "Je vois très bien…";
+}
+function scheduleBotClue(api, room) {
+  const s = room.gameState;
+  if (!s || s.phase !== "clues") return;
+  const id = speakingOrder(s)[s.speakerIdx];
+  if (!id || !isBotSeat(room, id) || s.clues[id]) return;
+  const idx = s.speakerIdx;
+  setTimeout(() => {
+    if (room.gameState !== s || s.phase !== "clues" || s.speakerIdx !== idx) return;
+    s.clues[id] = botClue(s, id);
+    s.speakerIdx++;            // a bot passes the turn by itself
+    broadcastState(api, room);
+    scheduleBotClue(api, room);
+  }, 2200);
 }
 
 // Deal roles + words once the settings are decided.
@@ -241,27 +371,59 @@ function deal(api, room) {
   state.winner = null;
   state.mrwhiteGuessing = null;
   state.mrwhiteGuessResult = null;
+  state.voteLog = [];
+  state.clues = {};
+  state.defense = null;
+  state.scored = false;
+  state.lastLeft = null;
   state.phase = "distribution";
 
   players.forEach((p) => api.toPlayer(p.id, "uc:you", cards[p.id]));
   broadcastState(api, room);
 }
 
+// All the pairs a mode can draw from, as { a, b, why, kind, src, universe }.
+// src = the mode the pair belongs to (used in its key, so ratings match).
+function candidates(mode, room) {
+  const mem = memoryOf(room), o = mem.opts;
+  const words = () => {
+    let l = anime.WORDS.map(([a, b, lvl, cat]) => ({ a, b, lvl, cat, kind: "word", src: "classique" }));
+    l = l.concat(mem.custom.word.map((c) => ({ a: c.a, b: c.b, lvl: "normal", cat: "Perso", kind: "word", src: "classique", by: c.by })));
+    const byCat = o.category === "all" ? l : l.filter((c) => c.cat === o.category);
+    const byLvl = o.difficulty === "all" ? byCat : byCat.filter((c) => c.lvl === o.difficulty);
+    return byLvl.length ? byLvl : (byCat.length ? byCat : l); // never empty
+  };
+  const chars = (list, src) => list.map(([a, b, why]) => ({ a, b, why, kind: "character", src }));
+  const univers = () => {
+    const l = [];
+    Object.keys(anime.UNIVERS).forEach((u) => anime.UNIVERS[u].forEach(([a, b, why]) => l.push({ a, b, why, universe: u, kind: "character", src: "univers" })));
+    return l;
+  };
+  const customChars = () => mem.custom.character.map((c) => ({ a: c.a, b: c.b, why: "Paire proposée par " + c.by, kind: "character", src: "anime_confondu", by: c.by }));
+  if (mode === "classique") return words();
+  if (mode === "anime_saison") return chars(anime.SAISON, "anime_saison");
+  if (mode === "univers") return univers();
+  if (mode === "anime_hasard") return chars(anime.CONFONDU, "anime_confondu").concat(chars(anime.SAISON, "anime_saison"), univers(), customChars());
+  if (mode === "best_of") {
+    const all = words().concat(chars(anime.CONFONDU, "anime_confondu"), chars(anime.SAISON, "anime_saison"), univers(), customChars());
+    const score = (c) => {
+      const k = c.src + ":" + pairKey(c.a, c.b);
+      const r = mem.ratings.get(k) || { up: 0, down: 0 }, g = GLOBAL_RATINGS.get(k) || { up: 0, down: 0 };
+      return (r.up - r.down) * 2 + (g.up - g.down);
+    };
+    const liked = all.filter((c) => score(c) > 0);
+    return liked.length ? liked : all; // nothing rated yet: everything
+  }
+  return chars(anime.CONFONDU, "anime_confondu").concat(customChars());
+}
+
 // Pick a pair for the chosen mode: never one already played tonight (until
 // every pair was seen), never one the players disliked. The civil side is
 // chosen at random, so a pair can be played both ways.
 function buildPair(mode, room) {
-  let cands; // [{ a, b, why, universe }]
-  if (mode === "classique") cands = anime.WORDS.map(([a, b]) => ({ a, b }));
-  else if (mode === "univers") {
-    cands = [];
-    Object.keys(anime.UNIVERS).forEach((u) => anime.UNIVERS[u].forEach(([a, b, why]) => cands.push({ a, b, why, universe: u })));
-  } else {
-    const list = mode === "anime_saison" ? anime.SAISON : anime.CONFONDU;
-    cands = list.map(([a, b, why]) => ({ a, b, why }));
-  }
+  const cands = candidates(mode, room);
   const mem = memoryOf(room);
-  const keyOf = (c) => mode + ":" + pairKey(c.a, c.b);
+  const keyOf = (c) => c.src + ":" + pairKey(c.a, c.b);
   let ok = cands.filter((c) => !isBadPair(room, keyOf(c)));
   if (!ok.length) ok = cands; // everything disliked?! play anyway
   let fresh = ok.filter((c) => !mem.seen.has(keyOf(c)));
@@ -273,8 +435,8 @@ function buildPair(mode, room) {
   const c = pick(fresh);
   mem.seen.add(keyOf(c));
   const [civ, und] = Math.random() < 0.5 ? [c.a, c.b] : [c.b, c.a];
-  const base = { key: keyOf(c), why: c.why || null };
-  if (mode === "classique") return Object.assign(base, { kind: "word", civil: civ, undercover: und });
+  const base = { key: keyOf(c), why: c.why || null, category: c.cat || null, level: c.lvl || null, by: c.by || null };
+  if (c.kind === "word") return Object.assign(base, { kind: "word", civil: civ, undercover: und });
   return Object.assign(base, { kind: "character", universe: c.universe || null, civil: anime.character(civ), undercover: anime.character(und) });
 }
 
@@ -324,6 +486,9 @@ function broadcastState(api, room) {
       voted, total: api.players().length,
       endsAt: s.settings.endsAt,
       nbUnder: s.settings.nbUnder,
+      opts: memoryOf(room).opts, optValues: OPT_VALUES,
+      ratings: ratingsList(room),
+      proposals: memoryOf(room).proposals.length,
       maxUnder: Math.max(1, Math.floor((api.players().length - 1) / 2)), // civils must stay the majority
     });
     return;
@@ -347,6 +512,13 @@ function broadcastState(api, room) {
     winner: s.winner,
     universe: s.pair && s.pair.universe,
     lastLeft: s.lastLeft || null, // "X a quitté la partie"
+    speaker: s.phase === "clues" ? (speakingOrder(s)[s.speakerIdx] || null) : null,
+    clues: s.clues || {},
+    debateEndsAt: s.debateEndsAt || null,
+    defense: s.phase === "defense" ? s.defense : null,
+    votedIds: Object.keys(s.votes || {}),                   // who has voted (not for whom)
+    publicVotes: memoryOf(room).opts.votePublic ? Object.keys(s.votes || {}).map((v) => [s.names[v], s.names[s.votes[v]]]) : null,
+    opts: memoryOf(room).opts,
   };
   if (s.phase === "mrwhite") {
     payload.mrwhite = { id: s.mrwhiteGuessing, name: s.names[s.mrwhiteGuessing] };
@@ -359,9 +531,18 @@ function broadcastState(api, room) {
     const r = Object.values(s.rating || {});
     payload.rating = { up: r.filter((x) => x).length, down: r.filter((x) => !x).length };
     payload.finalRoles = s.order.map((id) => ({ id, name: s.names[id], role: s.roles[id] }));
+    payload.voteLog = s.voteLog || [];
+    payload.evening = eveningRecap(room);
+    payload.ratings = ratingsList(room);
   }
   api.toAll("uc:state", payload);
   scheduleBots(api, room);
+}
+
+// Pairs rated tonight (for the host): best first.
+function ratingsList(room) {
+  return [...memoryOf(room).ratings.entries()].map(([k, r]) => ({ pair: k.split(":").slice(1).join(":"), up: r.up, down: r.down }))
+    .sort((a, b) => (b.up - b.down) - (a.up - a.down)).slice(0, 30);
 }
 
 // ---------- module (called by the engine) ----------
@@ -409,11 +590,72 @@ module.exports = {
         if (isHost && state.phase === "settings") finalizeSettings(api, room);
         break;
 
+      case "setOption": { // host only, before dealing: last word, debate, public vote, category, difficulty
+        if (!isHost || state.phase !== "settings" || !payload || !(payload.key in OPT_VALUES)) break;
+        if (!OPT_VALUES[payload.key].some((v) => v === payload.value)) break;
+        memoryOf(room).opts[payload.key] = payload.value;
+        broadcastState(api, room);
+        break;
+      }
+      case "proposePair": { // a player proposes a pair; the host accepts or refuses it
+        if (isHost || !payload) break;
+        const a = String(payload.a || "").trim().slice(0, 40), b = String(payload.b || "").trim().slice(0, 40);
+        const kind = payload.kind === "character" ? "character" : "word";
+        const mem = memoryOf(room);
+        const who = (api.players().find((p) => p.id === me) || {}).name || "?";
+        if (!a || !b || norm(a) === norm(b) || mem.proposals.length >= 30 || mem.proposals.filter((x) => x.byId === me).length >= 5) break;
+        mem.proposals.push({ id: Math.random().toString(36).slice(2, 9), a, b, kind, by: who, byId: me });
+        api.toPlayer(me, "uc:proposed", { a, b });
+        api.toHost("uc:proposals", mem.proposals.map(({ byId, ...x }) => x));
+        broadcastState(api, room);
+        break;
+      }
+      case "answerPair": { // host: { id, ok }
+        if (!isHost || !payload) break;
+        const mem = memoryOf(room);
+        const pr = mem.proposals.find((x) => x.id === payload.id);
+        if (!pr) break;
+        mem.proposals = mem.proposals.filter((x) => x !== pr);
+        if (payload.ok) mem.custom[pr.kind].push({ a: pr.a, b: pr.b, by: pr.by });
+        api.toPlayer(pr.byId, "uc:proposalAnswer", { a: pr.a, b: pr.b, ok: !!payload.ok });
+        api.toHost("uc:proposals", mem.proposals.map(({ byId, ...x }) => x));
+        broadcastState(api, room);
+        break;
+      }
+      case "nextSpeaker": // host: the current player has given their clue
+        if (isHost && state.phase === "clues" && state.speakerIdx < speakingOrder(state).length) {
+          state.speakerIdx++;
+          broadcastState(api, room);
+          scheduleBotClue(api, room);
+        }
+        break;
+      case "startDebate": { // host: debate timer, then the vote opens by itself
+        const sec = memoryOf(room).opts.debateSec;
+        if (!isHost || state.phase !== "clues" || !sec || state.debateEndsAt) break;
+        state.debateEndsAt = Date.now() + sec * 1000;
+        const s0 = state;
+        state.debateTimer = setTimeout(() => {
+          if (room.gameState === s0 && s0.phase === "clues") module.exports.handle(api, { isHost: true, seatId: null }, room, "toVote");
+        }, sec * 1000);
+        broadcastState(api, room);
+        break;
+      }
+      case "confirmElim": // host, after the last word
+        if (isHost && state.phase === "defense" && state.defense) eliminate(api, room, state.defense.id);
+        break;
+      case "revoteDefense": // host, after the last word: everybody votes again
+        if (isHost && state.phase === "defense") {
+          state.defense = null; state.phase = "vote"; state.votes = {}; state.tieCandidates = null;
+          state.voteSeq = (state.voteSeq || 0) + 1;
+          broadcastState(api, room);
+        }
+        break;
       case "beginClues":
-        if (isHost && state.phase === "distribution") { state.phase = "clues"; broadcastState(api, room); }
+        if (isHost && state.phase === "distribution") { state.phase = "clues"; startClueTurn(api, room); broadcastState(api, room); }
         break;
       case "toVote":
         if (isHost && state.phase === "clues") {
+          clearTimeout(state.debateTimer); state.debateEndsAt = null;
           state.phase = "vote"; state.votes = {}; state.tieCandidates = null;
           state.voteSeq = (state.voteSeq || 0) + 1; // phones use it to know a NEW vote started
           broadcastState(api, room);
@@ -444,6 +686,7 @@ module.exports = {
         } else {
           state.alive[id] = false;
           checkWinner(state);
+          setTimeout(() => sendAllCardsToDead(api, room), 50);
         }
         state.lastEliminated = { id, name: state.names[id], role: "mrwhite" };
         state.mrwhiteGuessing = null;
@@ -453,7 +696,7 @@ module.exports = {
       }
       case "next":
         if (isHost && state.phase === "reveal") {
-          if (state.winner) state.phase = "ended";
+          if (state.winner) { state.phase = "ended"; finishGame(room); }
           else {
             state.phase = "clues";
             state.round += 1;
@@ -462,6 +705,7 @@ module.exports = {
             // New round -> a brand new random turn order (Mr. White still not 1st/2nd).
             const mr = Object.keys(state.roles).find((id) => state.roles[id] === "mrwhite" && state.alive[id]);
             state.order = mrWhiteLate(shuffle(state.order), mr, state.alive);
+            startClueTurn(api, room);
           }
           broadcastState(api, room);
         }
@@ -541,6 +785,8 @@ module.exports = {
     if (who && who.seatId && state.cards && state.cards[who.seatId]) {
       api.toPlayer(who.seatId, "uc:you", state.cards[who.seatId]);
     }
+    if (who && who.seatId && state.alive && state.alive[who.seatId] === false) setTimeout(() => sendAllCardsToDead(api, room), 50);
+    if (who && who.isHost) api.toHost("uc:proposals", memoryOf(room).proposals.map(({ byId, ...x }) => x));
     if (who && who.seatId && state.phase === "vote" && state.votes && state.votes[who.seatId]) {
       broadcastState(api, room); // state first (the phone needs voteSeq), then "already voted"
       api.toPlayer(who.seatId, "uc:voted", { targetId: state.votes[who.seatId] });
@@ -568,7 +814,11 @@ module.exports = {
       return broadcastState(api, room);
     }
     checkWinner(state);
-    if (state.winner && state.phase !== "ended") { state.phase = "ended"; return broadcastState(api, room); }
+    if (state.winner && state.phase !== "ended") { state.phase = "ended"; finishGame(room); return broadcastState(api, room); }
+    if (state.phase === "defense" && state.defense && state.defense.id === playerId) { // the accused left
+      state.defense = null; state.phase = "reveal"; state.lastEliminated = { id: playerId, name: state.names[playerId], role: state.roles[playerId] };
+      return broadcastState(api, room);
+    }
     if (state.phase === "vote") {
       // votes FOR the one who left are void: those voters vote again
       const lost = Object.keys(state.votes).filter((v) => state.votes[v] === playerId);

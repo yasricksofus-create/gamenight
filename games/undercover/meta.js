@@ -6,6 +6,7 @@ module.exports = {
   name: "Undercover",
   tagline: "Démasque l'imposteur... ou fais-toi passer pour un civil",
   emoji: "🕵️",
+  reactions: true, // live emoji reactions (engine feature)
   theme: { primary: "#B4872E", secondary: "#9E2B1E", background: "#12100D", text: "#F1E6C9" },
   cheats: [
     { id: "reveal-role", label: "Révéler les rôles", emoji: "👁️", secret: true },
