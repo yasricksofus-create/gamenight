@@ -1,4 +1,5 @@
-/* style.css -- Neon / club look of Kietkoutsa Reborn (host screen + phones).
+/* style.css -- Look of Kietkoutsa Reborn (host screen + phones): the base
+   rules first, then the "Arcade pixel" DA layer that overrides them (near the end).
    Loaded once by common.js; the browser keeps it in cache. */
 :root{--kkt-mag:#ff2fb0;--kkt-cyan:#22e0ff;--kkt-pur:#9b5cff;--kkt-ink:#07060f;--kkt-gold:#ffd54a;}
 body.room{background:transparent;}
@@ -194,6 +195,7 @@ body.kkt-music .kkt-eq span{animation-play-state:running}
 .kkt-cheat{font-family:inherit;cursor:pointer;border:1px solid rgba(255,255,255,.25);
   background:rgba(255,255,255,.07);color:#f3e9ff;padding:8px 12px;border-radius:10px;font-size:.85rem;text-align:left;}
 .kkt-secret-btn{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:64;}
+.kkt-btn.kkt-secret-btn:active{transform:translateX(-50%);}
 .kkt-secret{position:fixed;inset:0;z-index:110;background:rgba(5,2,12,.97);overflow:auto;padding:18px 16px 60px;display:none;}
 .kkt-secret.open{display:block;}
 .kkt-qr-corner{position:fixed;left:12px;bottom:12px;z-index:63;background:rgba(0,0,0,.55);border-radius:12px;padding:6px;text-align:center;
@@ -243,6 +245,97 @@ body.kkt-nocursor, body.kkt-nocursor *{cursor:none !important}
 .kkt-modal-box{max-width:560px;width:100%;max-height:90vh;overflow:auto;text-align:left}
 .kkt-howto p{margin:.4em 0}
 .kkt-hist{display:flex;flex-direction:column;gap:8px;text-align:left}
+/* =====================================================================
+   DA « ARCADE PIXEL » (chosen on 11 Nov 2026) -- this layer sits on top of
+   everything above: a night-purple arcade cabinet, pink / cyan / yellow,
+   square corners, pixel borders (box-shadow rings), a CRT scanline, stepped
+   animations. Press Start 2P only for titles and big numbers (it is very
+   wide and tiring to read), Pixelify Sans for everything else.
+   ===================================================================== */
+/* the two pixel fonts are served by our own server (fonts/, licence OFL): no Google call */
+@font-face{font-family:"Press Start 2P";src:url("fonts/press-start-2p.woff2") format("woff2");font-weight:400;font-display:swap;}
+@font-face{font-family:"Pixelify Sans";src:url("fonts/pixelify-sans-400.woff2") format("woff2");font-weight:400 600;font-display:swap;}
+@font-face{font-family:"Pixelify Sans";src:url("fonts/pixelify-sans-700.woff2") format("woff2");font-weight:700;font-display:swap;}
+:root{--kkt-mag:#ff4d8d;--kkt-cyan:#3df2ff;--kkt-gold:#ffe14d;--kkt-pur:#7b5cff;--kkt-ink:#12102a;
+  --px-night:#12102a;--px-panel:#1d1a3f;--px-line:#3a3566;--px-text:#f4f0ff;--px-mute:#b8b0e0;
+  --px-display:"Press Start 2P","Courier New",monospace;--px-body:"Pixelify Sans",system-ui,sans-serif;}
+#kkt-bg{background:var(--px-night);}
+#kkt-bg::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(0deg,rgba(255,255,255,.035) 0 2px,transparent 2px 4px);}
+.kkt-bg-glow{display:none;}
+.kkt-eq{gap:8px;opacity:.35;}
+.kkt-eq span{border-radius:0;box-shadow:none;background:var(--kkt-mag);animation-timing-function:steps(4,end);}
+.kkt-eq span:nth-child(3n){background:var(--kkt-cyan);} .kkt-eq span:nth-child(4n){background:var(--kkt-gold);}
+.kkt-stage{color:var(--px-text);font-family:var(--px-body);font-size:1.05rem;}
+.kkt-stage *, .kkt-drawer, .kkt-drawer *, .kkt-drawer-btn, .kkt-toast, .kkt-secret *, .kkt-modal *, .kkt-banners *, .kkt-qr-corner{border-radius:0 !important;}
+.kkt-eyebrow{font-family:var(--px-display);font-size:.6rem;letter-spacing:.08em;color:var(--kkt-cyan);}
+.kkt-title{font-family:var(--px-display);font-size:1.7rem;line-height:1.45;letter-spacing:0;text-shadow:4px 4px 0 var(--kkt-mag);margin:.2em 0 .5em;}
+.kkt-h2{font-family:var(--px-display);font-size:.9rem;line-height:1.5;letter-spacing:0;color:var(--kkt-gold);}
+.kkt-tname{font-family:var(--px-body);font-weight:700;font-size:1.7rem;line-height:1.15;}
+.kkt-count{font-family:var(--px-display);font-size:1.6rem;text-shadow:3px 3px 0 var(--px-line);}
+.kkt-count.low{text-shadow:3px 3px 0 var(--px-line);}
+.kkt-count.big{font-size:2.6rem;}
+.kkt-theme{font-family:var(--px-display);font-size:1.1rem;line-height:1.5;text-shadow:3px 3px 0 var(--kkt-mag);}
+.kkt-slide .big{font-family:var(--px-display);font-size:1.9rem;line-height:1.4;text-shadow:4px 4px 0 var(--kkt-mag);}
+.kkt-sub{color:var(--px-mute);opacity:1;}
+/* buttons: flat fill + white pixel ring, pressed = pushed down */
+.kkt-btn{background:var(--kkt-cyan);color:var(--px-night);font-family:var(--px-body);font-weight:700;font-size:1.05rem;
+  box-shadow:0 0 0 3px var(--px-text),4px 4px 0 3px var(--kkt-mag);}
+.kkt-btn:active{transform:none;translate:3px 3px;box-shadow:0 0 0 3px var(--px-text),1px 1px 0 3px var(--kkt-mag);}
+.kkt-btn.ghost{background:var(--px-panel);color:var(--px-text);border:none;box-shadow:0 0 0 3px var(--px-line);}
+.kkt-btn:disabled{box-shadow:0 0 0 3px var(--px-line);}
+/* panels */
+.kkt-card,.kkt-block,.kkt-pl,.kkt-res,.kkt-le,.kkt-badge,.kkt-mode,.kkt-drawer,.kkt-cheat,.kkt-vb,.kkt-chip,.kkt-mini,.kkt-bets button,.kkt-stepper button{
+  background:var(--px-panel);border:none;box-shadow:0 0 0 3px var(--px-line);}
+.kkt-card{margin:14px 3px;}
+.kkt-players{gap:14px;} .kkt-grid,.kkt-modes{gap:14px;}
+.kkt-pl.ok,.kkt-pl.voted{box-shadow:0 0 0 3px var(--kkt-cyan);}
+.kkt-pl.me{box-shadow:0 0 0 3px var(--kkt-mag);}
+.kkt-mode.on{background:rgba(255,77,141,.18);box-shadow:0 0 0 3px var(--kkt-mag),4px 4px 0 3px var(--px-line);}
+.kkt-mode .tally{background:var(--kkt-gold);color:var(--px-night);}
+.kkt-vb{color:var(--px-text);}
+.kkt-vb.on{background:var(--kkt-mag);color:var(--px-night);box-shadow:0 0 0 3px var(--px-text);}
+.kkt-vb.second{background:rgba(255,225,77,.18);box-shadow:0 0 0 3px var(--kkt-gold);}
+.kkt-vb .tr{background:var(--kkt-gold);}
+.kkt-chip{color:var(--px-text);} .kkt-chip.on{background:var(--kkt-cyan);color:var(--px-night);}
+.kkt-pick{background:var(--kkt-cyan);color:var(--px-night);}
+.kkt-bets button.on{background:var(--kkt-gold);color:var(--px-night);box-shadow:0 0 0 3px var(--px-text);}
+.kkt-joker{background:transparent;border:none;box-shadow:0 0 0 3px var(--kkt-gold);}
+.kkt-toggle,.kkt-tabs{border:none;box-shadow:0 0 0 3px var(--px-line);gap:0;}
+.kkt-toggle button.on,.kkt-tabs button.on{background:var(--kkt-cyan);color:var(--px-night);}
+.kkt-switch,.kkt-switch::after{border-radius:0 !important;}
+.kkt-switch{background:var(--px-line);} .kkt-switch.on{background:var(--kkt-cyan);}
+.kkt-switch::after{background:var(--px-text);}
+.kkt-search,.kkt-input{background:var(--px-night);border:none;box-shadow:0 0 0 3px var(--px-line);color:var(--px-text);font-family:var(--px-body);}
+.kkt-search:focus,.kkt-input:focus{outline:none;box-shadow:0 0 0 3px var(--kkt-cyan);}
+.kkt-banner{background:var(--px-panel);border:none;box-shadow:0 0 0 3px var(--kkt-cyan);}
+.kkt-banner.gold{background:rgba(255,225,77,.12);box-shadow:0 0 0 3px var(--kkt-gold);color:var(--kkt-gold);}
+.kkt-le.top{background:rgba(255,77,141,.2);box-shadow:0 0 0 3px var(--kkt-mag);}
+.kkt-le .rk{color:var(--kkt-gold);font-family:var(--px-display);font-size:.75rem;}
+.kkt-badge{box-shadow:0 0 0 3px var(--kkt-gold);}
+.kkt-toast{background:var(--px-panel);border:none;box-shadow:0 0 0 3px var(--kkt-mag);font-family:var(--px-body);}
+.kkt-drawer-btn{background:var(--px-panel);border:none;box-shadow:0 0 0 3px var(--px-line);}
+/* progress bar = row of blocks */
+.kkt-bar{height:14px;background:var(--px-night);box-shadow:0 0 0 3px var(--px-line);}
+.kkt-bar > i{background:repeating-linear-gradient(90deg,var(--kkt-gold) 0 12px,transparent 12px 15px);}
+.kkt-trend .b{border-radius:0;background:var(--kkt-gold);}
+.kkt-dots i{border-radius:0;} .kkt-dots i.on{background:var(--kkt-mag);}
+/* covers and the "mystery disc" */
+.kkt-cover{box-shadow:0 0 0 6px var(--px-text),0 0 0 12px var(--px-night),0 0 0 18px var(--kkt-mag);image-rendering:auto;}
+.kkt-vinyl{border-radius:0;clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%);
+  background:repeating-linear-gradient(0deg,#0a0820 0 6px,#1d1a3f 6px 12px);box-shadow:none;animation-timing-function:steps(8,end);}
+.kkt-vinyl::after{background:var(--kkt-gold);border-radius:0;clip-path:polygon(30% 0,70% 0,100% 30%,100% 70%,70% 100%,30% 100%,0 70%,0 30%);
+  font:1.6rem var(--px-display);color:var(--px-night);}
+/* avatars: square pixel frames */
+.kkt-av{border:none;box-shadow:0 0 0 3px var(--px-text);}
+.kkt-px-grid button{background:var(--px-panel);border:none;box-shadow:0 0 0 2px var(--px-line);}
+.kkt-px-grid button.on{box-shadow:0 0 0 3px var(--kkt-mag);}
+.kkt-why span{background:var(--px-night);box-shadow:0 0 0 2px var(--kkt-gold);color:var(--kkt-gold);}
+body.kkt-audio-wait::after{border-radius:0;border:none;box-shadow:0 0 0 3px var(--kkt-cyan);background:var(--px-panel);font-family:var(--px-body);}
+/* the QR code moves up: the engine's "⚙ Host" menu lives in the bottom-left corner */
+.kkt-qr-corner{bottom:64px;background:var(--px-panel);box-shadow:0 0 0 3px var(--px-line);}
+@media (max-width:560px){.kkt-title{font-size:1.25rem}.kkt-count.big{font-size:1.9rem}}
+@media (prefers-reduced-motion: reduce){.kkt-vinyl{animation:none}}
+
 /* high contrast: plain background, brighter text, no moving equaliser */
 body.kkt-contrast #kkt-bg{display:none}
 body.kkt-contrast{background:#000 !important;color:#fff}
