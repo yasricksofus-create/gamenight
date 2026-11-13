@@ -481,7 +481,7 @@
     ["Zouk", "zouk"], ["Maloya / Séga", "maloya"], ["Anime", "anime opening"], ["Années 2000", "hits 2000"], ["Rock", "rock classics"], ["Electro", "electro"]];
 
   window.KktSearch = function (el, send) {
-    let timer = null, seq = 0, list = [], you = { subs: [], perPlayer: 1 }, st = null, mineSig = "";
+    let timer = null, seq = 0, list = [], you = { subs: [], perPlayer: 1 }, st = null, mineSig = ""; const drafts = {}; // trackId -> note as typed (wins over the server copy)
     // Two columns on a wide screen (search ~2/3 left, my songs ~1/3 right),
     // one column on a phone: see .kkt-picker in style.css.
     el.innerHTML = `<div class="kkt-picker"><div class="kkt-pick-find">
@@ -562,8 +562,10 @@
       const max = you.perPlayer || 1, n = you.subs.length;
       pickc.textContent = n >= max ? `(${max}/${max} ✓)` : `(${n}/${max})`;
       const tb = st && st.settings && st.settings.mode === "truebluff";
-      // rebuild "my picks" ONLY when the list itself changed (keeps typing in notes)
-      const sig = JSON.stringify(you.subs.map((t) => [t.id, t.nature, t.note])) + tb;
+      // rebuild "my picks" ONLY when the list itself changed. The secret notes are
+      // NOT part of this signature: the server echoing a saved note must never
+      // redraw the box you are typing in (that used to eat letters and spaces).
+      const sig = JSON.stringify(you.subs.map((t) => [t.id, t.nature])) + tb;
       if (sig !== mineSig) {
         const focused = document.activeElement && document.activeElement.getAttribute("data-note");
         mineSig = sig;
@@ -577,17 +579,20 @@
             <button class="kkt-mini" data-rm="${kktEsc(t.id)}" aria-label="Retirer">✕</button>
             ${tb ? `<div class="kkt-toggle" style="flex:1 1 100%"><button data-nat="sincere" data-id="${kktEsc(t.id)}" class="${t.nature === "sincere" ? "on" : ""}">💖 Sincère</button>
               <button data-nat="bluff" data-id="${kktEsc(t.id)}" class="${t.nature === "bluff" ? "on" : ""}">🃏 Bluff</button></div>` : ""}
-            <div class="note"><input class="kkt-input" data-note="${kktEsc(t.id)}" maxlength="120" placeholder="Message caché (révélé à la fin de la manche)" value="${kktEsc(t.note || "")}"/></div></div>`).join("")
+            <div class="note"><input class="kkt-input" data-note="${kktEsc(t.id)}" maxlength="120" placeholder="Message caché (révélé à la fin de la manche)" value="${kktEsc(t.id in drafts ? drafts[t.id] : (t.note || ""))}"/></div></div>`).join("")
           : `<p class="kkt-sub">Rien encore.</p>`);
         mine.querySelectorAll("[data-mv]").forEach((b) => (b.onclick = () => send("moveTrack", { trackId: b.getAttribute("data-id"), dir: +b.getAttribute("data-mv") })));
         mine.querySelectorAll("[data-prevm]").forEach((b) => (b.onclick = () => kktAudio.preview(b.getAttribute("data-prevm")).catch(() => {})));
         mine.querySelectorAll("[data-rm]").forEach((b) => (b.onclick = () => send("removeTrack", { trackId: b.getAttribute("data-rm") })));
         mine.querySelectorAll("[data-nat]").forEach((b) => (b.onclick = () => send("setNature", { trackId: b.getAttribute("data-id"), nature: b.getAttribute("data-nat") })));
         mine.querySelectorAll("[data-note]").forEach((inp) => {
+          // what you type stays in the box (drafts); it is sent once you pause
+          // typing for 0.8 s, or when you leave the box
+          const id = inp.getAttribute("data-note");
           let h = null;
-          const push = () => send("setNote", { trackId: inp.getAttribute("data-note"), note: inp.value });
-          inp.oninput = () => { clearTimeout(h); h = setTimeout(push, 600); };
-          inp.onblur = () => { clearTimeout(h); push(); };
+          const push = () => { clearTimeout(h); h = null; send("setNote", { trackId: id, note: inp.value }); };
+          inp.oninput = () => { drafts[id] = inp.value; clearTimeout(h); h = setTimeout(push, 800); };
+          inp.onblur = () => { if (h) push(); };
           if (focused && focused === inp.getAttribute("data-note")) { inp.focus(); const L = inp.value.length; try { inp.setSelectionRange(L, L); } catch (e) {} }
         });
       }

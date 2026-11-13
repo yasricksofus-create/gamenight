@@ -124,7 +124,16 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
       return JSON.stringify({ wide, sw: document.documentElement.scrollWidth, iw: innerWidth, vv: visualViewport.width, scale: visualViewport.scale, b: [b.x, b.y, b.width], hit: e && e.outerHTML.slice(0, 60) }); }));
     await ph.p.click("[data-pick='0']");
     await ph.p.waitForSelector("[data-note]");
-    await ph.p.fill("[data-note]", "Message secret de " + ph.name);
+    if (ph === phones[0]) {
+      // slow typing with pauses longer than the save delay: the server's echo
+      // must never eat letters or spaces
+      const msg = "Mon son préféré de l'été ";
+      await ph.p.click("[data-note]");
+      for (const ch of msg) { await ph.p.keyboard.type(ch); await wait(ch === " " ? 900 : 60); }
+      const got = await ph.p.inputValue("[data-note]");
+      if (got !== msg) throw new Error("note typing lost characters: " + JSON.stringify(got));
+      await ph.p.fill("[data-note]", "Message secret de " + ph.name);
+    } else await ph.p.fill("[data-note]", "Message secret de " + ph.name);
     await ph.p.locator("[data-note]").blur();
   }
   // duplicate: Tom tries Lea's exact track -> refused (title differs per query, so test chips instead)
